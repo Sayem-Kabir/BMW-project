@@ -1,24 +1,25 @@
-# Ultralytics YOLO dataset config for Module 1D (phone / smoking / no_seatbelt)
+# Ultralytics YOLO dataset config for Module 1D
+# Source: https://www.kaggle.com/datasets/habbas11/dms-driver-monitoring-system
 #
-# After converting DMD (or a Kaggle distraction dataset) to YOLO format, either:
-#   1. Upload this folder layout to Kaggle as dataset "dmd-driver-monitoring", OR
-#   2. Point `path:` below to your local absolute dataset root.
-#
-# Expected layout:
+# Layout (Roboflow-style, as used in Colab):
 #   <path>/
-#     images/train/*.jpg
-#     images/val/*.jpg
-#     labels/train/*.txt
-#     labels/val/*.txt
+#     train/images/
+#     train/labels/
+#     valid/images/
+#     valid/labels/
+#     data.yaml
 #
-# Each label line:  <class_id> <x_center> <y_center> <width> <height>   (all normalized 0–1)
+# Classes:
+#   0 Open Eye | 1 Closed Eye | 2 Cigarette | 3 Phone | 4 Seatbelt
 
-path: /kaggle/input/dmd-driver-monitoring
-train: images/train
-val: images/val
+path: /content/dms-driver-monitoring-system
+train: train/images
+val: valid/images
 
-nc: 3
+nc: 5
 names:
-  0: phone
-  1: smoking
-  2: no_seatbelt
+  0: Open Eye
+  1: Closed Eye
+  2: Cigarette
+  3: Phone
+  4: Seatbelt

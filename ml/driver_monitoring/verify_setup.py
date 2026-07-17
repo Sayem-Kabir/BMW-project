@@ -154,7 +154,7 @@ def main() -> None:
         out = det.detect(np.zeros((480, 640, 3), dtype=np.uint8))
         ok = _check(
             "YOLODriverDetector safe mode without weights",
-            out.model_loaded is False and out.seatbelt_worn is True,
+            out.model_loaded is False and out.seatbelt_worn is False,
         )
         failed = failed or not ok
     except Exception as exc:  # noqa: BLE001

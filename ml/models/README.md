@@ -3,8 +3,8 @@
 #
 # Expected files:
 #   shape_predictor_68_face_landmarks.dat   (~99 MB, Module 1A)
-#   driver_monitor_best.pt                  (Module 1D — after Kaggle YOLO training)
+#   driver_monitor_best.pt                  (Module 1D — Colab DMS YOLOv8n, 5 classes)
 #
 # Train YOLO:
-#   see ml/training/README.md
-#   notebooks/train_driver_yolo_kaggle.py
+#   notebooks/train_driver_yolo_colab.ipynb
+#   Dataset: https://www.kaggle.com/datasets/habbas11/dms-driver-monitoring-system

@@ -12,12 +12,17 @@ from ml.driver_monitoring.yolo_detector import (
 )
 
 
-def test_class_names_match_spec():
-    assert YOLO_CLASS_NAMES == ("phone", "smoking", "no_seatbelt")
+def test_class_names_match_dms_dataset():
+    assert YOLO_CLASS_NAMES == (
+        "Open Eye",
+        "Closed Eye",
+        "Cigarette",
+        "Phone",
+        "Seatbelt",
+    )
 
 
 def test_yolo_weights_missing_by_default_or_optional():
-    # In a fresh checkout the fine-tuned weights are not committed
     if not yolo_driver_model_ready():
         assert not YOLO_DRIVER_MODEL_PATH.is_file() or YOLO_DRIVER_MODEL_PATH.stat().st_size == 0
 
@@ -30,7 +35,9 @@ def test_detect_without_weights_returns_safe_defaults():
     assert result.model_loaded is False
     assert result.phone_detected is False
     assert result.smoking_detected is False
-    assert result.seatbelt_worn is True
+    assert result.seatbelt_worn is False
+    assert result.open_eye_detected is False
+    assert result.closed_eye_detected is False
     assert result.message is not None
     assert "Weights missing" in result.message
 
@@ -45,12 +52,12 @@ def test_to_dict_shape():
     result = DriverObjectDetections(phone_detected=True, model_loaded=False, message="x")
     d = result.to_dict()
     assert d["phone_detected"] is True
+    assert "open_eye_detected" in d
+    assert "closed_eye_detected" in d
     assert "detections" in d
-    assert "seatbelt_worn" in d
 
 
 def test_convenience_wrapper():
     frame = np.zeros((240, 320, 3), dtype=np.uint8)
-    # May or may not have weights; either way should not crash
     result = detect_driver_objects(frame)
     assert isinstance(result, DriverObjectDetections)

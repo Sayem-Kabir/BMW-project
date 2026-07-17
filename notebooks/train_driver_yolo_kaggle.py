@@ -1,29 +1,23 @@
-# === KAGGLE NOTEBOOK: YOLOv8 Driver Monitoring Training (Module 1D) ===
-# Runtime: GPU T4 / P100 | Estimated time: 3–5 hours @ 100 epochs
+# === COLAB / KAGGLE: YOLOv8 Driver Monitoring Training (Module 1D) ===
+# Dataset: https://www.kaggle.com/datasets/habbas11/dms-driver-monitoring-system
+# Prefer notebooks/train_driver_yolo_colab.ipynb for the full interactive flow.
 #
-# Setup:
-#   1. Request DMD: https://github.com/Vicomtech/DMD-Driver-Monitoring-Dataset
-#   2. Convert RGB annotations to YOLO format (3 classes: phone, smoking, no_seatbelt)
-#   3. Upload as Kaggle dataset (suggested name: dmd-driver-monitoring)
-#   4. Create a new Notebook → Accelerator = GPU → Add Data → select your dataset
-#   5. Paste this cell (or upload from repo notebooks/)
-#
-# Output:
-#   /kaggle/working/runs/detect/driver_monitor_dmd_v1/weights/best.pt
-#   Download → save locally as ml/models/driver_monitor_best.pt
+# Classes: Open Eye, Closed Eye, Cigarette, Phone, Seatbelt
 
 from pathlib import Path
 
 from ultralytics import YOLO
 
-DATASET_YAML = "/kaggle/input/dmd-driver-monitoring/dataset.yaml"
-# If your Kaggle dataset slug differs, update DATASET_YAML accordingly.
+DATASET_YAML = "/content/dms-driver-monitoring-system/data.yaml"
+# On Kaggle after adding the dataset, this may instead be:
+# DATASET_YAML = "/kaggle/input/dms-driver-monitoring-system/data.yaml"
 
 assert Path(DATASET_YAML).is_file(), (
-    f"Missing {DATASET_YAML}. Add your YOLO-format DMD dataset to this notebook."
+    f"Missing {DATASET_YAML}. Download the DMS dataset first "
+    "(see notebooks/train_driver_yolo_colab.ipynb)."
 )
 
-model = YOLO("yolov8n.pt")  # COCO pretrained backbone
+model = YOLO("yolov8n.pt")
 
 results = model.train(
     data=DATASET_YAML,
@@ -33,8 +27,8 @@ results = model.train(
     device=0,
     patience=15,
     save_period=10,
-    project="/kaggle/working/runs",
-    name="driver_monitor_dmd_v1",
+    project="/content/runs",
+    name="driver_monitor_dms_v1",
     flipud=0.0,
     fliplr=0.5,
     mosaic=1.0,
@@ -43,4 +37,4 @@ results = model.train(
 
 print(f"Best mAP50: {results.results_dict['metrics/mAP50(B)']:.4f}")
 print(f"Best mAP50-95: {results.results_dict['metrics/mAP50-95(B)']:.4f}")
-print("Download best.pt from the Output panel → ml/models/driver_monitor_best.pt")
+print("Download best.pt → ml/models/driver_monitor_best.pt")

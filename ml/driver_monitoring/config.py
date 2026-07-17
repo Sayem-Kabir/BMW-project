@@ -18,7 +18,7 @@ DLIB_LANDMARK_URL_FALLBACK = (
 )
 DLIB_LANDMARK_PATH = MODELS_DIR / DLIB_LANDMARK_FILENAME
 
-# YOLO weights (populated in Module 1D after Kaggle training)
+# YOLO weights (Module 1D — Kaggle DMS / Colab fine-tune)
 YOLO_DRIVER_MODEL_PATH = MODELS_DIR / "driver_monitor_best.pt"
 
 # ── EAR / MAR (Module 1B) ───────────────────────────────────────────
@@ -36,10 +36,18 @@ DISTRACTION_PITCH_THRESHOLD = 15.0  # degrees — looking down
 DISTRACTION_YAW_THRESHOLD = 15.0  # degrees — looking sideways
 
 # ── YOLO object detection (Module 1D) ───────────────────────────────
-YOLO_PHONE_CONFIDENCE = 0.70
-YOLO_SMOKING_CONFIDENCE = 0.65
-YOLO_SEATBELT_CONFIDENCE = 0.80
-YOLO_CLASS_NAMES = ("phone", "smoking", "no_seatbelt")
+# Trained on: https://www.kaggle.com/datasets/habbas11/dms-driver-monitoring-system
+YOLO_CLASS_NAMES = (
+    "Open Eye",
+    "Closed Eye",
+    "Cigarette",
+    "Phone",
+    "Seatbelt",
+)
+YOLO_PHONE_CONFIDENCE = 0.50
+YOLO_SMOKING_CONFIDENCE = 0.50  # Cigarette
+YOLO_SEATBELT_CONFIDENCE = 0.50
+YOLO_EYE_CONFIDENCE = 0.50
 
 
 def ensure_models_dir() -> Path:
