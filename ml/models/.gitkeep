@@ -1,0 +1,2 @@
+# Place trained model weights here (.pt, .onnx, .joblib).
+# Files are gitignored — see root .gitignore.

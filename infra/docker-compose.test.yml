@@ -1,0 +1,30 @@
+services:
+  # ── Databases ────────────────────────────────────
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: bmw-postgres-test
+    environment:
+      POSTGRES_USER: bmwai
+      POSTGRES_PASSWORD: bmwai_secret
+      POSTGRES_DB: bmwai_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_test:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bmwai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: bmw-redis-test
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_test:/data
+
+volumes:
+  postgres_data_test:
+  redis_data_test:

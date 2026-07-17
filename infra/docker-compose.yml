@@ -1,0 +1,183 @@
+services:
+  # ── Databases ────────────────────────────────────
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: bmw-postgres
+    environment:
+      POSTGRES_USER: bmwai
+      POSTGRES_PASSWORD: bmwai_secret
+      POSTGRES_DB: bmwai_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bmwai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bmw-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: bmw-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    networks:
+      - bmw-network
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: bmw-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - bmw-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: bmw-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    volumes:
+      - minio_data:/data
+    networks:
+      - bmw-network
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.14.3
+    container_name: bmw-mlflow
+    ports:
+      - "5000:5000"
+    command: mlflow server --host 0.0.0.0 --backend-store-uri /mlflow
+    volumes:
+      - mlflow_data:/mlflow
+    networks:
+      - bmw-network
+
+  # ── Vehicle SDV Layer ────────────────────────────
+  kuksa-databroker:
+    image: ghcr.io/eclipse-kuksa/kuksa-databroker:0.4.4
+    container_name: bmw-kuksa
+    ports:
+      - "55555:55555"
+    command: ["--insecure"]
+    networks:
+      - bmw-network
+
+  # ── LLM ──────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: bmw-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - bmw-network
+
+  # ── Monitoring ───────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: bmw-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    networks:
+      - bmw-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: bmw-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - bmw-network
+
+  # ── Application Services ─────────────────────────
+  backend:
+    build: ../apps/backend
+    container_name: bmw-backend
+    ports:
+      - "8000:8000"
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://bmwai:bmwai_secret@postgres:5432/bmwai_db
+      DATABASE_URL_SYNC: postgresql://bmwai:bmwai_secret@postgres:5432/bmwai_db
+      REDIS_URL: redis://redis:6379
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CHROMA_HOST: chromadb
+      MINIO_ENDPOINT: minio:9000
+      KUKSA_HOST: kuksa-databroker
+      OLLAMA_BASE_URL: http://ollama:11434
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      chromadb:
+        condition: service_started
+    volumes:
+      - ../apps/backend:/app
+      - ../ml:/ml
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - bmw-network
+
+  frontend:
+    build: ../apps/frontend
+    container_name: bmw-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ../apps/frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - /app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      WATCHPACK_POLLING: "true"
+    # Dev mode: install into the named volume, then hot-reload
+    command: sh -c "pnpm install && pnpm dev -H 0.0.0.0 -p 3000"
+    networks:
+      - bmw-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  chroma_data:
+  minio_data:
+  mlflow_data:
+  ollama_data:
+  prometheus_data:
+  grafana_data:
+  frontend_node_modules:
+
+networks:
+  bmw-network:
+    driver: bridge

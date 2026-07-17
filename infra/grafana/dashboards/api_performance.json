@@ -1,0 +1,8 @@
+{
+  "title": "BMW API Performance (scaffold)",
+  "timezone": "browser",
+  "panels": [],
+  "schemaVersion": 39,
+  "version": 1,
+  "description": "Placeholder dashboard — wire Prometheus metrics in Phase 7"
+}
