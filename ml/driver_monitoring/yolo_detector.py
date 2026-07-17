@@ -20,6 +20,7 @@ from ml.driver_monitoring.config import (
     YOLO_SEATBELT_CONFIDENCE,
     YOLO_SMOKING_CONFIDENCE,
 )
+from ml.common.gpu_detector import get_inference_device
 
 
 @dataclass
@@ -87,7 +88,7 @@ class YOLODriverDetector:
         self.smoking_conf = smoking_conf
         self.seatbelt_conf = seatbelt_conf
         self.eye_conf = eye_conf
-        self.device = device
+        self.device = get_inference_device(device)
         self._model = None
         self._names: dict[int, str] = {
             i: name for i, name in enumerate(YOLO_CLASS_NAMES)
@@ -125,9 +126,7 @@ class YOLODriverDetector:
                 ),
             )
 
-        kwargs: dict[str, Any] = {"verbose": False}
-        if self.device is not None:
-            kwargs["device"] = self.device
+        kwargs: dict[str, Any] = {"verbose": False, "device": self.device}
 
         results = self._model(frame, **kwargs)
         detections: list[Detection] = []

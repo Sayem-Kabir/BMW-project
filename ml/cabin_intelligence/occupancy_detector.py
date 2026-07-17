@@ -20,6 +20,7 @@ from ml.cabin_intelligence.config import (
     UNATTENDED_TIMEOUT_SEC,
     YOLO_PERSON_MODEL_PATH,
 )
+from ml.common.gpu_detector import get_inference_device
 
 
 @dataclass
@@ -129,6 +130,7 @@ class CabinOccupancyDetector:
         child_threshold: float = CHILD_HEIGHT_RATIO_THRESHOLD,
         unattended_timeout_sec: float = UNATTENDED_TIMEOUT_SEC,
         motion_px: float = MOTION_PIXEL_THRESHOLD,
+        device: str | int | None = None,
     ) -> None:
         self.model_path = Path(model_path) if model_path else YOLO_PERSON_MODEL_PATH
         self.seat_zones = seat_zones or dict(SEAT_ZONES)
@@ -136,6 +138,7 @@ class CabinOccupancyDetector:
         self.child_threshold = child_threshold
         self.unattended_timeout_sec = unattended_timeout_sec
         self.motion_px = motion_px
+        self.device = get_inference_device(device)
         self._model = None
         self._model_error: str | None = None
         self._last_driver_centroid: tuple[float, float] | None = None
@@ -170,6 +173,7 @@ class CabinOccupancyDetector:
             conf=self.person_conf,
             iou=PERSON_IOU,
             classes=[0],  # COCO person
+            device=self.device,
             verbose=False,
         )
         persons: list[PersonDetection] = []

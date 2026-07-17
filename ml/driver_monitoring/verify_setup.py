@@ -184,6 +184,22 @@ def main() -> None:
         _check("DriverMonitoringPipeline blank frame", False, str(exc))
         failed = True
 
+    print("\nGPU / inference device:")
+    try:
+        from ml.common.gpu_detector import get_gpu_info
+
+        info = get_gpu_info()
+        device = info.get("inference_device", "cpu")
+        detail = (
+            f"device={device} available={info.get('available')} "
+            f"via={info.get('detected_by')} name={info.get('name')}"
+        )
+        ok = _check("Inference device resolved", device in {"cpu", "mps"} or str(device).startswith("cuda"), detail)
+        failed = failed or not ok
+    except Exception as exc:  # noqa: BLE001
+        _check("Inference device resolved", False, str(exc))
+        failed = True
+
     print()
     if failed:
         print("Result: INCOMPLETE — fix FAIL items above.")

@@ -26,12 +26,14 @@ def train(
     epochs: int = 100,
     imgsz: int = 640,
     batch: int = 32,
-    device: str | int = 0,
+    device: str | int | None = None,
     project: str = "runs",
     name: str = "driver_monitor_dms_v1",
     model: str = "yolov8n.pt",
 ) -> Path:
     from ultralytics import YOLO
+
+    from ml.common.gpu_detector import get_inference_device
 
     data_yaml = Path(data_yaml)
     if not data_yaml.is_file():
@@ -40,13 +42,14 @@ def train(
             "Use notebooks/train_driver_yolo_colab.ipynb or download the Kaggle DMS dataset."
         )
 
+    resolved_device = get_inference_device(device)
     yolo = YOLO(model)
     results = yolo.train(
         data=str(data_yaml),
         epochs=epochs,
         imgsz=imgsz,
         batch=batch,
-        device=device,
+        device=resolved_device,
         patience=15,
         save_period=10,
         project=project,
@@ -75,7 +78,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--epochs", type=int, default=100)
     p.add_argument("--imgsz", type=int, default=640)
     p.add_argument("--batch", type=int, default=32)
-    p.add_argument("--device", default="0", help="GPU id or 'cpu'")
+    p.add_argument(
+        "--device",
+        default=None,
+        help="GPU id / 'cuda:0' / 'cpu' (default: auto-detect via ml.common.gpu_detector)",
+    )
     p.add_argument("--project", type=str, default="runs")
     p.add_argument("--name", type=str, default="driver_monitor_dms_v1")
     p.add_argument("--model", type=str, default="yolov8n.pt")
@@ -84,7 +91,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    device: str | int = args.device
+    device = args.device
     if isinstance(device, str) and device.isdigit():
         device = int(device)
     train(

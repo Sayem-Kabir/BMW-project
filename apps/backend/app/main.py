@@ -59,12 +59,26 @@ for router in ALL_ROUTERS:
 
 @app.get("/health")
 async def health_check():
-    return {
+    payload = {
         "status": "healthy",
         "version": "1.0.0",
         "phase": "1",
         "environment": getattr(settings, "environment", "development"),
     }
+    try:
+        # Optional — keep /health cheap if ML path is unavailable in CI
+        import sys
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parents[3]
+        if str(repo) not in sys.path:
+            sys.path.insert(0, str(repo))
+        from ml.common.gpu_detector import get_inference_device
+
+        payload["inference_device"] = get_inference_device()
+    except Exception:  # noqa: BLE001
+        payload["inference_device"] = "unknown"
+    return payload
 
 
 @app.get("/")
