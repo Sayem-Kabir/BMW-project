@@ -51,5 +51,10 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 
+    # Phase 1 — driver monitoring model assets (paths relative to repo / absolute)
+    dlib_landmark_path: str = ""
+    yolo_driver_model_path: str = ""
+    ml_models_dir: str = ""
+
 
 settings = Settings()

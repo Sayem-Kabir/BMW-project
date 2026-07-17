@@ -56,6 +56,10 @@ ml/models/*.pth
 ml/models/*.onnx
 ml/models/*.h5
 ml/models/*.joblib
+ml/models/*.dat
+ml/models/*.dat.bz2
+!ml/models/.gitkeep
+!ml/models/README.md
 
 # Data files
 data/**/*

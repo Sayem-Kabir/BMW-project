@@ -1,8 +1,13 @@
-# Heavy ML / CV dependencies — install when starting Phase 1+
-# pip install -r requirements-ml.txt
+# Heavy ML / CV dependencies — full stack for later phases
+# For Phase 1A–1C start with the lighter file instead:
+#   pip install -r apps/backend/requirements-phase1.txt
+#
+# Full install (GPU/training, XAI, RAG):
+#   pip install -r apps/backend/requirements-ml.txt
+
 ultralytics==8.2.0
 opencv-python==4.10.0.84
-mediapipe==0.10.9
+mediapipe==0.10.14
 dlib==19.24.6
 numpy==1.24.3
 scipy==1.13.0
