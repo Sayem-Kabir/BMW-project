@@ -9,21 +9,29 @@ class HeadPose(BaseModel):
     pitch: float = 0.0
     yaw: float = 0.0
     roll: float = 0.0
+    distracted: bool = False
 
 
 class DriverAnalysisResponse(BaseModel):
     alertness_score: int = Field(ge=0, le=100)
     risk_level: str
-    ear_value: float
-    mar_value: float
+    ear_value: float = 0.0
+    mar_value: float = 0.0
     yawn_count: int = 0
-    head_pose: HeadPose
+    head_pose: HeadPose = Field(default_factory=HeadPose)
     phone_detected: bool = False
+    smoking_detected: bool = False
     seatbelt_worn: bool = True
+    is_drowsy: bool = False
+    is_yawning: bool = False
+    face_detected: bool = False
     consecutive_drowsy_frames: int = 0
+    yolo_model_loaded: bool = False
+    vehicle_id: str | None = None
+    session_id: str | None = None
     xai_heatmap_url: str | None = None
-    phase: str = "scaffold"
-    message: str = "Driver monitoring pipeline not trained yet (Phase 1)"
+    phase: str = "1"
+    message: str = "ok"
 
 
 class DriverSessionResponse(BaseModel):

@@ -1,5 +1,5 @@
 """
-Smoke-test Module 1A–1C foundations: paths, OpenCV, Dlib, MediaPipe head pose.
+Smoke-test Module 1A–1E foundations: paths, detectors, and pipeline.
 
 Usage (from repo root):
     python -m ml.driver_monitoring.verify_setup
@@ -18,7 +18,7 @@ def _check(label: str, ok: bool, detail: str = "") -> bool:
 
 
 def main() -> None:
-    print("=== Module 1A–1C — Foundation check ===\n")
+    print("=== Module 1A–1E — Foundation check ===\n")
     failed = False
 
     # Paths / config
@@ -161,6 +161,29 @@ def main() -> None:
         _check("YOLODriverDetector safe mode without weights", False, str(exc))
         failed = True
 
+    print("\nPipeline (Module 1E):")
+    try:
+        import numpy as np
+        from ml.driver_monitoring.pipeline import DriverMonitoringPipeline
+
+        pipe = DriverMonitoringPipeline()
+        out = pipe.process_frame(
+            np.zeros((480, 640, 3), dtype=np.uint8),
+            vehicle_id="verify",
+            session_id="verify",
+        )
+        ok = _check(
+            "DriverMonitoringPipeline blank frame",
+            isinstance(out.get("alertness_score"), int)
+            and out.get("risk_level") in {"LOW", "MEDIUM", "HIGH", "CRITICAL"},
+            f"score={out.get('alertness_score')} risk={out.get('risk_level')}",
+        )
+        failed = failed or not ok
+        pipe.close()
+    except Exception as exc:  # noqa: BLE001
+        _check("DriverMonitoringPipeline blank frame", False, str(exc))
+        failed = True
+
     print()
     if failed:
         print("Result: INCOMPLETE — fix FAIL items above.")
@@ -168,7 +191,7 @@ def main() -> None:
         print("  Tip: pip install -r apps/backend/requirements-phase1.txt")
         raise SystemExit(1)
 
-    print("Result: Module 1A–1D foundations OK (YOLO weights optional until trained).")
+    print("Result: Module 1A–1E foundations OK (YOLO weights optional until trained).")
 
 
 if __name__ == "__main__":

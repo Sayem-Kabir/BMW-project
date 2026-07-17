@@ -62,7 +62,7 @@ async def health_check():
     return {
         "status": "healthy",
         "version": "1.0.0",
-        "phase": "0",
+        "phase": "1",
         "environment": getattr(settings, "environment", "development"),
     }
 
@@ -74,7 +74,7 @@ async def root():
         "docs": "/docs",
         "health": "/health",
         "api": "/api/v1",
-        "phase": "0 — scaffold complete",
+        "phase": "1 — driver monitoring",
     }
 
 

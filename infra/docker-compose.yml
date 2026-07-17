@@ -134,6 +134,8 @@ services:
       KUKSA_HOST: kuksa-databroker
       OLLAMA_BASE_URL: http://ollama:11434
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      # /ml volume is the repo ml/ package → import as ml.* when PYTHONPATH includes /
+      PYTHONPATH: /:/app
     depends_on:
       postgres:
         condition: service_healthy

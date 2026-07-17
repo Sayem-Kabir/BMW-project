@@ -4,7 +4,7 @@ Module 1A: download_assets / verify_setup
 Module 1B: analyze_frame, compute_ear, compute_mar
 Module 1C: HeadPoseEstimator, estimate_head_pose
 Module 1D: YOLODriverDetector, detect_driver_objects
-           (train: python -m ml.training.train_driver_yolo)
+Module 1E: DriverMonitoringPipeline, get_pipeline
 """
 
 from ml.driver_monitoring.config import (
@@ -30,6 +30,11 @@ from ml.driver_monitoring.head_pose import (
     estimate_head_pose,
 )
 from ml.driver_monitoring.mar_detector import compute_mar
+from ml.driver_monitoring.pipeline import (
+    DriverMonitoringPipeline,
+    get_pipeline,
+    risk_level_from_alertness,
+)
 from ml.driver_monitoring.yolo_detector import (
     DriverObjectDetections,
     YOLODriverDetector,
@@ -57,4 +62,7 @@ __all__ = [
     "DriverObjectDetections",
     "YOLODriverDetector",
     "detect_driver_objects",
+    "DriverMonitoringPipeline",
+    "get_pipeline",
+    "risk_level_from_alertness",
 ]

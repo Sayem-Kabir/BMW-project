@@ -14,6 +14,7 @@ from app.main import app
 def mock_db_session():
     session = AsyncMock(spec=AsyncSession)
     session.scalar = AsyncMock(return_value=0)
+    session.get = AsyncMock(return_value=None)
     session.execute = AsyncMock()
     result = MagicMock()
     result.scalars.return_value.all.return_value = []

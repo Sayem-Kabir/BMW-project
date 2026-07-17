@@ -26,5 +26,9 @@ class Driver(Base):
 
     organization = relationship("Organization", back_populates="drivers")
     sessions = relationship("DriverSession", back_populates="driver")
-    safety_events = relationship("SafetyEvent", back_populates="driver")
+    safety_events = relationship(
+        "SafetyEvent",
+        back_populates="driver",
+        foreign_keys="SafetyEvent.driver_id",
+    )
     scores = relationship("DriverScore", back_populates="driver")
