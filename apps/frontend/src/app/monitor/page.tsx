@@ -17,6 +17,9 @@ export default function MonitorPage() {
             <Link href="/dashboard" className="text-slate-400 hover:text-white">
               Dashboard
             </Link>
+            <Link href="/road" className="text-slate-400 hover:text-white">
+              Road
+            </Link>
             <a
               href="http://localhost:8000/docs"
               target="_blank"

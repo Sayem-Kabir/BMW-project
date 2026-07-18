@@ -1,0 +1,17 @@
+# Phase 2A–2I road understanding stack
+# Install from repo root (after Phase 1 deps):
+#   pip install -r apps/backend/requirements-phase2.txt
+#
+# ultralytics / opencv / torch usually already installed via requirements-phase1.txt.
+# supervision provides ByteTrack for Module 2C.
+# segmentation-models-pytorch loads the DeepLabV3+ Module 2B checkpoint.
+# timm provides the MiDaS_small encoder used by pretrained Module 2D.
+
+ultralytics==8.2.0
+segmentation-models-pytorch==0.5.0
+opencv-python==4.10.0.84
+numpy>=1.24,<2.0
+supervision==0.22.0
+timm==1.0.15
+torch>=2.0.0
+torchvision>=0.15.0

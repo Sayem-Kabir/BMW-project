@@ -46,3 +46,98 @@ export interface DriverAnalysis {
   phase?: string;
   message?: string;
 }
+
+export interface RoadObject {
+  id: string;
+  class: string;
+  confidence: number;
+  bbox: number[] | null;
+  track_id: number | null;
+  track_age_frames: number | null;
+  track_hits: number | null;
+  track_confirmed: boolean;
+  relative_inverse_depth: number | null;
+  distance_m: number | null;
+  distance_calibrated: boolean;
+  state: string | null;
+  state_confidence: number | null;
+  temporal_confidence: number | null;
+  temporal_bbox: number[] | null;
+  temporally_confirmed: boolean;
+}
+
+export interface RoadSegmentationSummary {
+  model_loaded: boolean;
+  weights_path: string | null;
+  device: string | null;
+  mask_shape: number[] | null;
+  class_names: string[];
+  class_ratios: Record<string, number>;
+  mean_confidence: number | null;
+  checkpoint_epoch: number | null;
+  checkpoint_val_acc: number | null;
+  message: string | null;
+}
+
+export interface RoadTrackingSummary {
+  tracker_ready: boolean;
+  frame_index: number;
+  active_tracks: number;
+  confirmed_tracks: number;
+  min_hits: number;
+  message: string | null;
+}
+
+export interface RoadDepthSummary {
+  model_available: boolean;
+  model_loaded: boolean;
+  model_type: string;
+  device: string | null;
+  map_shape: number[] | null;
+  inference_ms: number | null;
+  metric_calibrated: boolean;
+  message: string | null;
+}
+
+export interface RoadTrafficLightSummary {
+  classifier_ready: boolean;
+  states: string[];
+  classified_count: number;
+  known_count: number;
+  message: string | null;
+}
+
+export interface RoadPedestrianTemporalSummary {
+  model_loaded: boolean;
+  weights_path: string | null;
+  sequence_length: number;
+  input_size: number;
+  confidence_threshold: number;
+  buffered_frames: number;
+  detected: boolean;
+  confidence: number | null;
+  bbox: number[] | null;
+  message: string | null;
+}
+
+export interface RoadPipelineSummary {
+  processing_ms: number;
+  stage_times_ms: Record<string, number>;
+  warnings: string[];
+}
+
+/** Payload from Module 2H REST analysis and WebSocket streaming. */
+export interface RoadAnalysis {
+  objects: RoadObject[];
+  segmentation: RoadSegmentationSummary | null;
+  tracking: RoadTrackingSummary | null;
+  depth: RoadDepthSummary | null;
+  traffic_lights: RoadTrafficLightSummary | null;
+  pedestrian_temporal: RoadPedestrianTemporalSummary | null;
+  pipeline: RoadPipelineSummary | null;
+  stream_id: string | null;
+  frame_id: number;
+  timestamp: string;
+  phase: string;
+  message: string;
+}

@@ -56,5 +56,14 @@ class Settings(BaseSettings):
     yolo_driver_model_path: str = ""
     ml_models_dir: str = ""
 
+    # Phase 2 — road understanding
+    seg_road_model_path: str = ""
+    yolo_road_model_path: str = ""  # optional box detector for later modules
+    pedestrian_temporal_model_path: str = ""
+    midas_model_type: str = ""  # default MiDaS_small via ml.road_understanding.config
+    depth_meters_scale: float | None = None
+    depth_meters_offset: float | None = None
+    ml_device: str = ""
+
 
 settings = Settings()

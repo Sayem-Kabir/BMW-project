@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { DriverAnalysis } from "@/lib/types";
+import type { DriverAnalysis, RoadAnalysis } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -50,4 +50,45 @@ export async function analyzeDriverFrame(
     throw new Error(detail || `Analysis failed (${res.status})`);
   }
   return res.json() as Promise<DriverAnalysis>;
+}
+
+/** Module 2H single-frame road analysis with retained stream state. */
+export async function analyzeRoadFrame(
+  file: Blob,
+  streamId = "road-ui",
+  filename = "road-frame.jpg"
+): Promise<RoadAnalysis> {
+  const form = new FormData();
+  form.append("file", file, filename);
+  const params = new URLSearchParams({ stream_id: streamId });
+  const res = await fetch(`${API_URL}/api/v1/road/analysis?${params}`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const detail = body?.detail || `Road analysis failed (${res.status})`;
+    throw new Error(String(detail));
+  }
+  return res.json() as Promise<RoadAnalysis>;
+}
+
+export async function resetRoadStream(streamId: string): Promise<boolean> {
+  const res = await fetch(
+    `${API_URL}/api/v1/road/streams/${encodeURIComponent(streamId)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    throw new Error(`Could not reset road stream (${res.status})`);
+  }
+  const payload = (await res.json()) as { reset?: boolean };
+  return Boolean(payload.reset);
+}
+
+export async function getRoadStatus(): Promise<RoadAnalysis> {
+  const res = await fetch(`${API_URL}/api/v1/road/status`);
+  if (!res.ok) {
+    throw new Error(`Could not load road status (${res.status})`);
+  }
+  return res.json() as Promise<RoadAnalysis>;
 }

@@ -489,13 +489,13 @@ All datasets below are free to access and optimized for Kaggle/Colab training wo
 - **Expected training time:** ~8–12 hours on Kaggle P100 for 50 epochs at 640px.
 - **Expected mAP50:** ~0.55–0.65 (BDD100K is intentionally challenging)
 
-#### PIE — Pedestrian Intention Estimation Dataset
-- **URL:** https://github.com/aras62/PIE
-- **What it contains:** 6 hours of naturalistic driving video with pedestrian trajectories, intention labels (will cross / will not cross), and ego-vehicle speed/heading. 1,842 pedestrian track sequences.
-- **Why it matters:** Pedestrian intention prediction is a core ADAS capability. This enables the near-collision TTC calculation in Module 08.
-- **Size:** ~50 GB full, ~6 GB for bounding box annotations only
-- **For training:** Use the intent labels to train a simple LSTM classifier on bounding box sequences. Demonstrates temporal reasoning beyond single-frame detection.
-- **Colab training:** This model is small (input: sequence of bboxes, output: binary intent). Trains in under 1 hour on Colab T4.
+#### Caltech Pedestrian YOLO Dataset
+- **URL:** https://www.kaggle.com/datasets/abhinavsasikumar/caltech-pedestrian-yolo/data
+- **What it contains:** Consecutive urban-driving frames with YOLO-format pedestrian bounding boxes derived from the Caltech Pedestrian benchmark.
+- **Why it matters:** It supports temporal pedestrian localization, confidence smoothing, and recovery through short detector dropouts.
+- **Task boundary:** The annotations contain pedestrian boxes, not crossing-intent labels. Module 2F must not emit crossing/not-crossing claims.
+- **For training:** Feed five consecutive 224px frames through a YOLOv8n feature backbone and LSTM; regress the primary pedestrian's normalized box and confidence.
+- **Export:** `best_pedestrian_yololstm.pt`
 
 ---
 
@@ -657,25 +657,27 @@ Average left and right EAR for the final score.
 | Category | Objects | Model |
 |----------|---------|-------|
 | Vehicles | Car, truck, bus, motorcycle, bicycle | YOLOv8m (BDD100K) |
-| Vulnerable users | Pedestrian, cyclist | YOLOv8m + PIE intent model |
+| Vulnerable users | Pedestrian, cyclist | YOLOv8m + Caltech YOLO-LSTM temporal localizer |
 | Infrastructure | Traffic light (+ state), stop sign, crosswalk | YOLOv8m |
 | Hazards | Road debris, obstacles | YOLOv8m (BDD100K custom class) |
 
 **Pipeline stages:**
 1. **Detection:** YOLOv8m inference on each frame → bounding boxes + class labels + confidence scores
 2. **Tracking:** ByteTrack (via `supervision` library) → persistent track IDs across frames
-3. **Depth estimation:** MiDaS (monocular depth, Intel ISL) → relative distance map → approximate meters
-4. **Traffic light classification:** Crop traffic light bounding box → HSV color histogram → red/amber/green state
-5. **Pedestrian intent:** PIE LSTM model → binary intent prediction for pedestrians within 20m
+3. **Depth estimation:** Pretrained MiDaS (Intel ISL) → relative inverse-depth map; populate meters only after fitting scale/offset with known-distance samples for the target camera
+4. **Traffic light classification:** Crop tracked traffic-light bounding box → HSV color masks + confidence/dominance gates → red/amber/green/unknown state
+5. **Temporal pedestrian localization:** Caltech-trained YOLOv8n-LSTM over five frames → primary pedestrian box + confidence; associate it with ByteTrack for temporal confirmation
+6. **Unified orchestration (2G):** One stateful pipeline per camera stream runs stages 2B–2F in dependency order, preserves successful partial results, and reports per-stage timing/warnings
+7. **Live road UI (2I):** Next.js `/road` supports environment-camera WebSocket streaming and JPEG/PNG uploads with projected boxes, object/depth/light details, stage timings, and warnings
 
-**Training dataset:** BDD100K for YOLOv8m fine-tuning. PIE dataset for the pedestrian intent LSTM.
+**Training datasets:** BDD100K for optional YOLOv8m fine-tuning and Caltech Pedestrian YOLO for the temporal pedestrian localizer.
 
 **Output schema:**
 ```json
 {
   "objects": [
     {"id": "track_12", "class": "car", "confidence": 0.94, "bbox": [120, 200, 380, 420], "distance_m": 8.3},
-    {"id": "track_7", "class": "pedestrian", "confidence": 0.89, "distance_m": 15.1, "intent": "crossing"},
+    {"id": "track_7", "class": "pedestrian", "confidence": 0.89, "distance_m": 15.1, "temporally_confirmed": true, "temporal_confidence": 0.91},
     {"id": "track_3", "class": "traffic_light", "state": "GREEN", "distance_m": 45.0}
   ],
   "frame_id": 1847,
@@ -792,6 +794,19 @@ safety_score = max(0, min(100, base_score + sum(penalties)))
 | Battery (EV) | XGBoost + degradation curve | SoC cycles, charge rate, temperature history | Health %, months to replacement | Synthetic generated |
 | Tires | Linear Regression + rules | Pressure history, mileage, cornering load | Wear %, km to replacement | Synthetic generated |
 
+**Pipeline stages (Phase 3 submodules):**
+1. **Feature engineering and datasets (3A):** AI4I 2020 loaders, transforms (`temp_ratio`, `power`, `wear_rate`), and synthetic degradation generators for brake/battery/tire
+2. **Engine health (3B):** LSTM autoencoder → anomaly score 0–1; warn > 0.60, critical > 0.80
+3. **Brake wear (3C):** XGBoost regressor → pad thickness (mm); warn < 5 mm, critical < 3 mm
+4. **Battery (EV) (3D):** XGBoost + degradation curve → SoH % and months to replacement; warn < 80%, critical < 65%
+5. **Tire wear (3E):** Linear regression + rules → wear % and km to replacement; warn > 70%, critical > 90%
+6. **Kuksa VSS I/O (3F):** Databroker subscribe/store plus mock sensor simulator for demos without hardware
+7. **Unified maintenance pipeline (3G):** Telemetry snapshot → 3B–3E with partial-failure handling, alert thresholds, and SHAP top-feature explanations in the same response
+8. **Backend API and jobs (3H):** REST endpoints + Celery batch predictions persisted to `maintenance_predictions`
+9. **Maintenance UI (3I):** Next.js component health cards, alerts, and SHAP/feature contribution views
+
+**Scope rules:** 3B–3E train/infer independently; 3F may run in parallel via the mock simulator; 3G tolerates partial model failures (same spirit as Module 2G); 3H wires 3G; 3I wires 3H. Training is CPU-friendly — no GPU detector requirement.
+
 **Alert thresholds:**
 
 | Component | Metric | Warning | Critical |
@@ -887,7 +902,7 @@ center?"
 | Unsafe following distance | TTC at highway speed | TTC < 4.0s at speed > 60 km/h | HIGH |
 | Sudden hard braking | Longitudinal deceleration | Δspeed < -12 km/h/s | MEDIUM |
 | Prolonged phone usage | YOLOv8 detection duration | > 5 consecutive seconds | HIGH |
-| Pedestrian crossing ignored | PIE intent + proximity | Intent=crossing AND distance < 15m | HIGH |
+| Pedestrian proximity hazard | Confirmed pedestrian track + depth/TTC | Distance < 15m with closing motion | HIGH |
 
 **Event record schema:**
 ```json
@@ -1085,7 +1100,7 @@ bmw-ai-platform/
 │       │   │       ├── driver.py          # Driver monitoring REST + WebSocket
 │       │   │       ├── road.py            # Road understanding endpoints
 │       │   │       ├── risk.py            # Risk score endpoints
-│       │   │       ├── maintenance.py     # Maintenance predictions
+│       │   │       ├── maintenance.py     # Maintenance predictions REST (3H)
 │       │   │       ├── assistant.py       # AI chat with SSE streaming
 │       │   │       ├── fleet.py           # Fleet management endpoints
 │       │   │       ├── events.py          # Safety event CRUD
@@ -1097,21 +1112,21 @@ bmw-ai-platform/
 │       │   │   ├── driver.py
 │       │   │   ├── session.py
 │       │   │   ├── event.py
-│       │   │   └── maintenance.py
+│       │   │   └── maintenance.py        # maintenance_predictions ORM (3H)
 │       │   ├── schemas/                   # Pydantic request/response schemas
 │       │   │   ├── driver.py
 │       │   │   ├── risk.py
 │       │   │   ├── event.py
-│       │   │   └── maintenance.py
+│       │   │   └── maintenance.py        # Maintenance API schemas (3H)
 │       │   ├── services/                  # Business logic layer
 │       │   │   ├── driver_service.py      # Orchestrates CV pipeline
 │       │   │   ├── risk_service.py        # Risk aggregation
 │       │   │   ├── assistant_service.py   # LangGraph invocation
-│       │   │   └── maintenance_service.py # ML model inference
+│       │   │   └── maintenance_service.py # ML model inference via 3G (3H)
 │       │   └── tasks/                     # Celery task definitions
 │       │       ├── scoring.py             # Periodic driver score updates
 │       │       ├── events.py              # Event post-processing
-│       │       └── maintenance.py         # Batch maintenance predictions
+│       │       └── maintenance.py         # Batch maintenance predictions (3H)
 │       ├── alembic/                       # DB migration scripts
 │       │   └── versions/
 │       ├── tests/
@@ -1133,17 +1148,20 @@ bmw-ai-platform/
 │   │   ├── occupancy_detector.py         # Seat zone ROI + person detection
 │   │   └── child_classifier.py           # Bounding box size heuristic
 │   ├── road_understanding/
-│   │   ├── object_detector.py            # YOLOv8m BDD100K inference
+│   │   ├── road_segmenter.py             # DeepLabV3+ BDD100K road masks (2B)
+│   │   ├── object_detector.py            # Optional YOLO boxes for downstream tasks
 │   │   ├── tracker.py                    # ByteTrack via supervision
 │   │   ├── depth_estimator.py            # MiDaS monocular depth
 │   │   ├── traffic_light.py              # HSV traffic light state classifier
-│   │   └── pedestrian_intent.py          # PIE LSTM intent model
+│   │   ├── pedestrian_temporal.py        # Caltech YOLO-LSTM localization
+│   │   └── pipeline.py                    # Unified stateful 2B–2F pipeline (2G)
 │   ├── predictive_maintenance/
-│   │   ├── data_generator.py             # Synthetic sensor degradation data
-│   │   ├── engine_model.py               # LSTM Autoencoder anomaly detection
-│   │   ├── brake_model.py                # XGBoost brake wear regression
-│   │   ├── battery_model.py              # Battery degradation curve
-│   │   └── tire_model.py                 # Tire wear linear model
+│   │   ├── data_generator.py             # AI4I loaders + synthetic degradation (3A)
+│   │   ├── engine_model.py               # LSTM Autoencoder anomaly detection (3B)
+│   │   ├── brake_model.py                # XGBoost brake wear regression (3C)
+│   │   ├── battery_model.py              # Battery degradation curve (3D)
+│   │   ├── tire_model.py                 # Tire wear linear model (3E)
+│   │   └── pipeline.py                   # Unified 3B–3E orchestration + SHAP (3G)
 │   ├── risk_engine/
 │   │   ├── aggregator.py                 # Composite weighted risk scoring
 │   │   ├── rules.yaml                    # Hard override rule configurations
@@ -1154,14 +1172,14 @@ bmw-ai-platform/
 │   │   └── evaluator.py                  # RAG evaluation on 50-pair test set
 │   ├── xai/
 │   │   ├── gradcam.py                    # EigenCAM for YOLOv8 models
-│   │   ├── shap_explainer.py             # SHAP TreeExplainer wrapper
+│   │   ├── shap_explainer.py             # SHAP TreeExplainer wrapper (used by 3G)
 │   │   └── nl_explainer.py               # LLM-powered NL explanation generator
 │   ├── training/                          # Kaggle/Colab training scripts
 │   │   ├── train_driver_yolo.py          # DMD → YOLOv8n fine-tuning
-│   │   ├── train_road_yolo.py            # BDD100K → YOLOv8m fine-tuning
-│   │   ├── train_pedestrian_intent.py    # PIE → LSTM intent model
-│   │   ├── train_engine_lstm.py          # AI4I → LSTM Autoencoder
-│   │   ├── train_maintenance_xgb.py      # Synthetic → XGBoost models
+│   │   ├── train_road_yolo.py            # Optional BDD100K object detector
+│   │   ├── train_pedestrian_temporal.py  # Caltech frames → YOLO-LSTM
+│   │   ├── train_engine_lstm.py          # AI4I → LSTM Autoencoder (3B)
+│   │   ├── train_maintenance_xgb.py      # Synthetic → XGBoost models (3C/3D)
 │   │   └── mlflow_logger.py              # MLflow tracking wrapper
 │   └── demo/
 │       ├── demo_runner.py                # Replay recorded video + telemetry
@@ -1171,10 +1189,10 @@ bmw-ai-platform/
 ├── sdv/                                   # Software-Defined Vehicle layer
 │   ├── kuksa/
 │   │   ├── vehicle_app.py                # Velocitas Vehicle App definition
-│   │   ├── signal_subscriber.py          # VSS signal subscription + storage
+│   │   ├── signal_subscriber.py          # VSS signal subscription + storage (3F)
 │   │   └── vss_config.json               # VSS path mappings for this vehicle
 │   └── mock/
-│       └── sensor_simulator.py           # Synthetic VSS signal generator for demo
+│       └── sensor_simulator.py           # Synthetic VSS signal generator for demo (3F)
 │
 ├── infra/
 │   ├── docker-compose.yml                # All 12 services
@@ -1199,7 +1217,7 @@ bmw-ai-platform/
 ├── notebooks/                            # Development/exploration notebooks
 │   ├── 01_ear_threshold_validation.ipynb
 │   ├── 02_bdd100k_exploration.ipynb
-│   ├── 03_maintenance_feature_engineering.ipynb
+│   ├── 03_maintenance_feature_engineering.ipynb  # AI4I + synthetic features (3A)
 │   └── 04_rag_evaluation.ipynb
 │
 ├── .env.example
@@ -1889,7 +1907,7 @@ async def driver_stream(websocket: WebSocket, vehicle_id: str, session_id: str):
 ### Phase 2 — Road Understanding System (Module 03)
 **Timeline: Days 15–28 | Training: Kaggle (parallel with Phase 1)**
 
-**What you achieve:** A real-time road scene analysis pipeline that detects and tracks all road objects, estimates distances, classifies traffic light states, and predicts pedestrian crossing intent.
+**What you achieve:** A real-time road scene pipeline that detects and tracks objects, estimates distance, classifies traffic lights, and temporally confirms the primary pedestrian through short detector dropouts.
 
 #### Step 2.1 — Kaggle Training Notebook for BDD100K
 
@@ -1922,54 +1940,46 @@ results = model.train(
 # Best classes: car (mAP50 ~0.72), traffic light (~0.65), pedestrian (~0.52)
 ```
 
-#### Step 2.2 — PIE Pedestrian Intent Training
+#### Step 2.2 — Caltech Temporal Pedestrian Localization Training
 
 ```python
-# === KAGGLE NOTEBOOK: PIE Pedestrian Intent LSTM ===
-# Dataset: Upload PIE annotations to Kaggle dataset
-# Runtime: CPU or GPU T4 | Estimated time: 30–60 minutes
+# Full implementation: notebooks/train_pedestrian_temporal.ipynb
+# Dataset: https://www.kaggle.com/datasets/abhinavsasikumar/caltech-pedestrian-yolo/data
+# Runtime: GPU T4 recommended
 
 import torch
 import torch.nn as nn
-import pandas as pd
-import numpy as np
-from torch.utils.data import DataLoader, TensorDataset
+from ultralytics import YOLO
 
-class PedestrianIntentLSTM(nn.Module):
-    """
-    Input: sequence of (x, y, w, h, ego_speed) over last 15 frames
-    Output: binary intent — 1 = will cross, 0 = will not cross
-    """
-    def __init__(self, input_size=5, hidden_size=64, num_layers=2, dropout=0.3):
+class TemporalPedestrianYOLOLSTM(nn.Module):
+    """Five RGB frames → primary normalized pedestrian bbox + confidence."""
+    def __init__(self, hidden_size=256):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers,
-                            batch_first=True, dropout=dropout)
-        self.classifier = nn.Sequential(
-            nn.Linear(hidden_size, 32),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
+        yolo = YOLO("yolov8n.pt")
+        self.backbone = nn.Sequential(*list(yolo.model.model.children())[:10])
+        self.lstm = nn.LSTM(
+            input_size=256 * 7 * 7,
+            hidden_size=hidden_size,
+            batch_first=True,
+        )
+        self.fc_bbox = nn.Linear(hidden_size, 4)
+        self.fc_conf = nn.Linear(hidden_size, 1)
+
+    def forward(self, frames):
+        batch, steps, channels, height, width = frames.shape
+        features = self.backbone(
+            frames.reshape(batch * steps, channels, height, width)
+        )
+        features = features.flatten(1).reshape(batch, steps, -1)
+        _, (hidden, _) = self.lstm(features)
+        return (
+            torch.sigmoid(self.fc_bbox(hidden[-1])),
+            torch.sigmoid(self.fc_conf(hidden[-1])).squeeze(-1),
         )
 
-    def forward(self, x):
-        lstm_out, (h_n, _) = self.lstm(x)
-        return self.classifier(h_n[-1]).squeeze()
-
-# Training
-SEQUENCE_LENGTH = 15  # 15 frames of history
-model = PedestrianIntentLSTM()
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
-criterion = nn.BCELoss()
-
-# Train for 50 epochs — this model is fast to train
-for epoch in range(50):
-    model.train()
-    # ... training loop with DataLoader ...
-    print(f"Epoch {epoch+1}: Loss={train_loss:.4f}, Acc={accuracy:.3f}")
-
-# Save for deployment
-torch.save(model.state_dict(), "/kaggle/working/pedestrian_intent_model.pt")
+# Train with sequence-group-level splits. Regress normalized YOLO xywh for the
+# largest pedestrian in the final frame and BCE confidence for empty/positive
+# frames. Save as /kaggle/working/best_pedestrian_yololstm.pt.
 ```
 
 ---
@@ -1979,7 +1989,21 @@ torch.save(model.state_dict(), "/kaggle/working/pedestrian_intent_model.pt")
 
 **What you achieve:** ML models that predict vehicle component failures from sensor data, integrated with Kuksa VSS signals.
 
-#### Step 3.1 — Load AI4I Dataset and Train Models
+**Submodules (implement in order; 3F may run parallel to 3B–3E):**
+
+| ID | Name | Deliverable |
+|----|------|-------------|
+| 3A | Feature engineering and datasets | AI4I loaders, feature transforms, synthetic generators |
+| 3B | Engine health | LSTM autoencoder anomaly score |
+| 3C | Brake wear | XGBoost pad-thickness regressor |
+| 3D | Battery (EV) | SoH % + months-to-replacement |
+| 3E | Tire wear | Wear % + km-to-replacement |
+| 3F | Kuksa VSS I/O | Databroker subscribe/store + mock simulator |
+| 3G | Unified maintenance pipeline | Orchestrate 3B–3E + SHAP explanations |
+| 3H | Backend API and jobs | REST + Celery → `maintenance_predictions` |
+| 3I | Maintenance UI | Next.js health cards, alerts, feature contributions |
+
+#### Step 3.1 — Load AI4I Dataset and Train Models (3A / 3B foundation)
 
 ```python
 # This trains locally or on Colab CPU — no GPU needed
@@ -2049,7 +2073,7 @@ shap.summary_plot(shap_values, X_test, show=False)
 # Save plot as artifact
 ```
 
-#### Step 3.2 — Kuksa Signal Subscription
+#### Step 3.2 — Kuksa Signal Subscription (3F)
 
 Create `sdv/kuksa/signal_subscriber.py`:
 
@@ -2659,7 +2683,7 @@ if __name__ == "__main__":
 |-------|----------|-----|------|----------|
 | YOLOv8n (Driver: DMD) | Kaggle | P100/T4 | 4–6 hours | **Week 1** |
 | YOLOv8m (Road: BDD100K) | Kaggle | P100 | 8–12 hours | **Week 2** |
-| LSTM Intent (PIE) | Kaggle/Colab | T4 or CPU | 1 hour | **Week 2** |
+| YOLO-LSTM Pedestrian Localizer (Caltech) | Kaggle/Colab | T4 | 2–4 hours | **Week 2** |
 | XGBoost (AI4I Maintenance) | Local/Colab | CPU | 5 minutes | **Week 2** |
 | LSTM Autoencoder (Engine) | Colab | T4 | 30 minutes | **Week 3** |
 
@@ -2734,7 +2758,7 @@ bmw-ai-platform/
     └── models/
         ├── driver_monitor_v1.pt        ← Download from Kaggle
         ├── road_scene_v1.pt            ← Download from Kaggle  
-        ├── pedestrian_intent_v1.pt     ← Download from Colab
+        ├── best_pedestrian_yololstm.pt ← Download from Colab/Kaggle
         ├── maintenance_xgb_v1.json     ← Train locally (tiny file)
         ├── engine_lstm_v1.pt           ← Train on Colab
         └── shape_predictor_68_face_landmarks.dat  ← Download from dlib.net
@@ -2911,8 +2935,10 @@ CREATE TABLE assistant_conversations (
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/road/analysis` | Analyze frame for road objects (returns detections + distances) |
-| WS | `/api/v1/road/stream/{vehicle_id}` | Real-time road scene stream |
+| GET | `/api/v1/road/status` | Cheap Modules 2B–2H readiness metadata; does not run inference |
+| POST | `/api/v1/road/analysis?stream_id=...` | Multipart JPEG/PNG → Module 2G analysis; stream ID preserves tracking/temporal state |
+| DELETE | `/api/v1/road/streams/{stream_id}` | Reset one retained REST stream session |
+| WS | `/api/v1/road/stream/{vehicle_id}` | Send binary JPEG/PNG frames; receive typed Module 2H analysis messages |
 
 ### Risk Engine
 
@@ -3052,7 +3078,7 @@ GitHub Actions Deploy:
 | Eclipse Velocitas SDK | https://github.com/eclipse-velocitas/vehicle-app-python-sdk | Vehicle App pattern for structured VSS subscription |
 | DMD Dataset | https://github.com/Vicomtech/DMD-Driver-Monitoring-Dataset | Primary driver monitoring training data |
 | BDD100K Toolkit | https://github.com/bdd100k/bdd100k | Dataset tools, YOLO format conversion scripts |
-| PIE Dataset | https://github.com/aras62/PIE | Pedestrian intention estimation data |
+| Caltech Pedestrian YOLO | https://www.kaggle.com/datasets/abhinavsasikumar/caltech-pedestrian-yolo/data | Temporal pedestrian localization data |
 | PyTorch Captum | https://github.com/pytorch/captum | Integrated Gradients XAI — study the tutorials |
 | pytorch-grad-cam | https://github.com/jacobgil/pytorch-grad-cam | EigenCAM for YOLOv8 — follow the YOLO example |
 | FastAPI Full-Stack Template | https://github.com/tiangolo/full-stack-fastapi-template | Starting scaffold for the backend |
@@ -3082,9 +3108,9 @@ Model Downloads (Days 3–4)
 Kaggle Training Setup (Days 3–5, run while coding)
 □ Create Kaggle account, enable GPU access (Account Settings)
 □ Upload DMD RGB subset to Kaggle as private dataset
-□ Upload BDD100K images subset to Kaggle
+□ Upload BDD100K segmentation images and train-ID masks to Kaggle
 □ Create Kaggle notebook for YOLOv8n driver training (notebooks/train_driver_yolo_kaggle.py)
-□ Create Kaggle notebook for YOLOv8m road training (notebooks/train_road_yolo_kaggle.py)
+□ Train DeepLabV3+ road segmentation (notebooks/train_road_seg.ipynb)
 □ Download trained weights to ml/models/ after training completes
 
 Knowledge Base (Day 5)

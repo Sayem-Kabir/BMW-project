@@ -4,7 +4,9 @@ export default function Home() {
   return (
     <main className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-bmw-blue to-blue-900">
       <div className="text-center px-6">
-        <p className="text-sm uppercase tracking-widest text-blue-200 mb-3">Phase 1 · Driver monitoring</p>
+        <p className="text-sm uppercase tracking-widest text-blue-200 mb-3">
+          Live driver + road intelligence
+        </p>
         <h1 className="text-5xl font-bold mb-4">
           BMW AI Automotive Intelligence Platform
         </h1>
@@ -23,6 +25,12 @@ export default function Home() {
             className="inline-block px-8 py-3 bg-bmw-blue border-2 border-white text-white font-bold rounded-lg hover:bg-blue-800"
           >
             Dashboard
+          </Link>
+          <Link
+            href="/road"
+            className="inline-block px-8 py-3 bg-emerald-600 border-2 border-emerald-300 text-white font-bold rounded-lg hover:bg-emerald-500"
+          >
+            Road View
           </Link>
           <a
             href="http://localhost:8000/docs"

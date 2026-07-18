@@ -57,7 +57,7 @@ bmw-ai-platform/
 ├── ml/
 │   ├── driver_monitoring/  # Drowsiness, phone usage detection
 │   ├── cabin_intelligence/ # Occupancy, child detection
-│   ├── road_understanding/ # YOLOv8m object detection + tracking
+│   ├── road_understanding/ # Segmentation, YOLO/ByteTrack, MiDaS depth
 │   ├── predictive_maintenance/  # Component failure forecasting
 │   ├── risk_engine/        # Risk scoring aggregation
 │   ├── assistant/          # LangGraph RAG agent
@@ -75,7 +75,7 @@ bmw-ai-platform/
 | **Frontend** | Next.js 14, React 18, TypeScript, Tailwind CSS, Recharts |
 | **Backend** | FastAPI, SQLAlchemy 2.0 async, Celery, Redis |
 | **Database** | PostgreSQL 16 + TimescaleDB (time-series) + ChromaDB (vector store) |
-| **Computer Vision** | PyTorch, YOLOv8, OpenCV, MediaPipe, Dlib |
+| **Computer Vision** | PyTorch, YOLOv8, DeepLabV3+, OpenCV, MediaPipe, Dlib |
 | **LLM/RAG** | LangGraph, Ollama (local LLM), Sentence Transformers |
 | **XAI** | pytorch-grad-cam, SHAP, Captum |
 | **Vehicle SDV** | Eclipse Kuksa Databroker, VSS signals |
@@ -87,10 +87,10 @@ bmw-ai-platform/
 |---|--------|-------------|
 | **01** | Driver Monitoring | Real-time drowsiness (EAR), yawning (MAR), head pose, phone/smoking detection |
 | **02** | Cabin Intelligence | Seat occupancy detection, child detection, unattended vehicle alerts |
-| **03** | Road Understanding | YOLOv8m object detection, ByteTrack tracking, pedestrian intent prediction |
+| **03** | Road Understanding | Segmentation, YOLO/ByteTrack, MiDaS depth, HSV traffic lights, Caltech temporal pedestrian localization |
 | **04** | Risk Prediction | Weighted risk scoring (0–100) with hard override rules |
 | **05** | Driver Behavior | Weekly safety scoring, harsh braking/speeding tracking |
-| **06** | Predictive Maintenance | Component health forecasting (engine, brakes, battery, tires) |
+| **06** | Predictive Maintenance | Modules 3A–3I: datasets, engine/brake/battery/tire models, Kuksa I/O, pipeline, API, UI |
 | **07** | AI Assistant | LangGraph agent with RAG + live Kuksa telemetry context |
 | **08** | Safety Events | TTC calculation, incident detection, video clip logging |
 | **09** | Fleet Dashboard | Multi-vehicle real-time monitoring with WebSocket updates |
@@ -113,13 +113,26 @@ bmw-ai-platform/
 - WebSocket streaming endpoint
 
 ### Phase 2 — Road Understanding (Days 15–28)
-- YOLOv8m training on BDD100K (parallel with Phase 1)
-- Pedestrian intent LSTM (PIE dataset)
+- DeepLabV3+ road segmentation on BDD100K
+- YOLO road-object detection for box-based downstream modules
+- YOLOv8n-LSTM temporal pedestrian localization (Caltech Pedestrian YOLO)
 - ByteTrack object tracking
+- Pretrained MiDaS relative depth (metric distance requires camera calibration)
+- HSV red/amber/green traffic-light state classification
+- Unified stateful frame pipeline with partial-failure handling (Module 2G)
+- Real JPEG/PNG REST inference and binary-frame WebSocket streaming (Module 2H)
+- Live road-camera/upload UI with overlays and pipeline diagnostics (Module 2I)
 
 ### Phase 3 — Predictive Maintenance (Days 22–35)
-- XGBoost models trained on AI4I 2020 dataset
-- Kuksa VSS signal subscription
+- Feature engineering: AI4I 2020 loaders + synthetic degradation generators (Module 3A)
+- LSTM autoencoder engine-health anomaly scoring (Module 3B)
+- XGBoost brake-wear pad-thickness regression (Module 3C)
+- Battery SoH / months-to-replacement model (Module 3D)
+- Tire wear % / km-to-replacement model (Module 3E)
+- Kuksa VSS subscribe/store + mock sensor simulator (Module 3F)
+- Unified maintenance pipeline with partial-failure handling and SHAP (Module 3G)
+- REST + Celery batch predictions persisted to the DB (Module 3H)
+- Maintenance UI: component health cards, alerts, feature contributions (Module 3I)
 
 ### Phase 4 — Risk Engine & Events (Days 28–40)
 - Composite risk aggregation
@@ -222,7 +235,7 @@ ollama pull llama3.2:3b
 All ML training happens on **Kaggle Free GPU** (P100/T4) to keep costs at $0.
 
 1. Create Kaggle account + enable GPU
-2. Upload datasets (DMD, BDD100K, PIE)
+2. Upload datasets (DMD, BDD100K, Caltech Pedestrian YOLO)
 3. Create notebooks from `notebooks/train_*.py` scripts
 4. Download trained `.pt` weights to `ml/models/`
 

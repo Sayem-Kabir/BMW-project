@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HeadPose(BaseModel):
@@ -62,19 +62,117 @@ class RoadObject(BaseModel):
     class_name: str = Field(alias="class")
     confidence: float
     bbox: list[float] | None = None
+    track_id: int | None = None
+    track_age_frames: int | None = None
+    track_hits: int | None = None
+    track_confirmed: bool = False
+    relative_inverse_depth: float | None = None
     distance_m: float | None = None
-    intent: str | None = None
+    distance_calibrated: bool = False
     state: str | None = None
+    state_confidence: float | None = None
+    temporal_confidence: float | None = None
+    temporal_bbox: list[float] | None = None
+    temporally_confirmed: bool = False
 
     model_config = {"populate_by_name": True}
 
 
+class RoadSegmentationSummary(BaseModel):
+    """Module 2B DeepLabV3+ mask metadata (pixel classes, not boxes)."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_loaded: bool = False
+    weights_path: str | None = None
+    device: str | None = None
+    mask_shape: list[int] | None = None
+    class_names: list[str] = Field(
+        default_factory=lambda: ["road", "shoulder", "background"]
+    )
+    class_ratios: dict[str, float] = Field(default_factory=dict)
+    mean_confidence: float | None = None
+    checkpoint_epoch: int | None = None
+    checkpoint_val_acc: float | None = None
+    message: str | None = None
+
+
+class RoadTrackingSummary(BaseModel):
+    """Module 2C ByteTrack status for object-centric downstream modules."""
+
+    tracker_ready: bool = False
+    frame_index: int = 0
+    active_tracks: int = 0
+    confirmed_tracks: int = 0
+    min_hits: int = 3
+    message: str | None = None
+
+
+class RoadDepthSummary(BaseModel):
+    """Module 2D pretrained MiDaS availability and calibration state."""
+
+    model_available: bool = False
+    model_loaded: bool = False
+    model_type: str = "MiDaS_small"
+    device: str | None = None
+    map_shape: list[int] | None = None
+    inference_ms: float | None = None
+    metric_calibrated: bool = False
+    message: str | None = None
+
+    model_config = ConfigDict(protected_namespaces=())
+
+
+class RoadTrafficLightSummary(BaseModel):
+    """Module 2E HSV classifier status."""
+
+    classifier_ready: bool = False
+    states: list[str] = Field(
+        default_factory=lambda: ["RED", "AMBER", "GREEN", "UNKNOWN"]
+    )
+    classified_count: int = 0
+    known_count: int = 0
+    message: str | None = None
+
+
+class RoadPedestrianTemporalSummary(BaseModel):
+    """Module 2F Caltech YOLO-LSTM temporal localizer status."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_loaded: bool = False
+    weights_path: str | None = None
+    sequence_length: int = 5
+    input_size: int = 224
+    confidence_threshold: float = 0.5
+    buffered_frames: int = 0
+    detected: bool = False
+    confidence: float | None = None
+    bbox: list[float] | None = None
+    message: str | None = None
+
+
+class RoadPipelineSummary(BaseModel):
+    """Module 2G orchestration timing and degradation metadata."""
+
+    processing_ms: float = 0.0
+    stage_times_ms: dict[str, float] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RoadAnalysisResponse(BaseModel):
-    objects: list[RoadObject] = []
+    objects: list[RoadObject] = Field(default_factory=list)
+    segmentation: RoadSegmentationSummary | None = None
+    tracking: RoadTrackingSummary | None = None
+    depth: RoadDepthSummary | None = None
+    traffic_lights: RoadTrafficLightSummary | None = None
+    pedestrian_temporal: RoadPedestrianTemporalSummary | None = None
+    pipeline: RoadPipelineSummary | None = None
+    stream_id: str | None = None
     frame_id: int = 0
     timestamp: datetime
-    phase: str = "scaffold"
-    message: str = "Road understanding pipeline not trained yet (Phase 2)"
+    phase: str = "2H"
+    message: str = "Road frame processed by Modules 2B–2G"
 
 
 class MaintenancePredictionResponse(BaseModel):
