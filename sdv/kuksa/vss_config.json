@@ -1,0 +1,16 @@
+{
+  "Vehicle.Speed": "speed_kmh",
+  "Vehicle.OBD.RPM": "rpm",
+  "Vehicle.OBD.OilTemp": "oil_temp_c",
+  "Vehicle.OBD.CoolantTemp": "coolant_temp_c",
+  "Vehicle.Chassis.Axle.Row1.Wheel.Left.Tire.Pressure": "tire_pressure_fl",
+  "Vehicle.Chassis.Axle.Row1.Wheel.Right.Tire.Pressure": "tire_pressure_fr",
+  "Vehicle.Chassis.Axle.Row2.Wheel.Left.Tire.Pressure": "tire_pressure_rl",
+  "Vehicle.Chassis.Axle.Row2.Wheel.Right.Tire.Pressure": "tire_pressure_rr",
+  "Vehicle.Powertrain.TractionBattery.StateOfCharge.Current": "battery_soc_pct",
+  "Vehicle.Powertrain.TractionBattery.StateOfHealth": "battery_health_pct",
+  "Vehicle.Chassis.Brake.PedalPosition": "brake_pedal_pct",
+  "Vehicle.Chassis.SteeringWheel.Angle": "steering_angle_deg",
+  "Vehicle.CurrentLocation.Latitude": "latitude",
+  "Vehicle.CurrentLocation.Longitude": "longitude"
+}

@@ -789,21 +789,23 @@ safety_score = max(0, min(100, base_score + sum(penalties)))
 
 | Component | Algorithm | Input Features | Output | Training Data |
 |-----------|-----------|---------------|--------|--------------|
-| Engine health | LSTM Autoencoder | RPM, oil temp, coolant temp, vibration | Anomaly score 0–1 | AI4I 2020 + synthetic |
-| Brake wear | XGBoost Regressor | Brake pressure, ABS events, speed, mileage | Pad thickness estimate (mm) | Synthetic generated |
-| Battery (EV) | XGBoost + degradation curve | SoC cycles, charge rate, temperature history | Health %, months to replacement | Synthetic generated |
-| Tires | Linear Regression + rules | Pressure history, mileage, cornering load | Wear %, km to replacement | Synthetic generated |
+| Engine health | Classifier (+ optional LSTM AE) | NEV voltage/current/RPM/temp/vibration | Fault class / anomaly 0–1 | `NEV_fault_dataset.csv` |
+| Brake condition | XGBoost Classifier | Usage, load, temperatures, vibration, diagnostics | Good / Fair / Poor | Logistics maintenance CSV |
+| Battery (EV) | XGBoost | Cycle, voltage, current, temperature, discharge time | SOH % | `EV_Battery_Dataset_1.csv` |
+| Tires | XGBoost Regressor | Tire pressure, vibration, load, usage, service age, road/weather codes | TPI-derived wear proxy % | `logistics_predictive_maintenanceV2.csv` |
 
 **Pipeline stages (Phase 3 submodules):**
-1. **Feature engineering and datasets (3A):** AI4I 2020 loaders, transforms (`temp_ratio`, `power`, `wear_rate`), and synthetic degradation generators for brake/battery/tire
-2. **Engine health (3B):** LSTM autoencoder → anomaly score 0–1; warn > 0.60, critical > 0.80
-3. **Brake wear (3C):** XGBoost regressor → pad thickness (mm); warn < 5 mm, critical < 3 mm
-4. **Battery (EV) (3D):** XGBoost + degradation curve → SoH % and months to replacement; warn < 80%, critical < 65%
-5. **Tire wear (3E):** Linear regression + rules → wear % and km to replacement; warn > 70%, critical > 90%
+1. **Feature engineering and datasets (3A):** Local loaders for EVIoT, battery cycle SoH, NEV fault, and logistics tire CSVs under `data/predictive_maintenance/`; feature transforms; train-ready frames for 3B–3E notebooks
+2. **Engine health (3B):** NEV fault classifier (+ optional LSTM autoencoder on motor telemetry); warn / critical on anomaly or fault probability
+3. **Brake condition (3C):** XGBoost classifier on logistics telemetry → `Good`, `Fair`, or `Poor`; maps to normal / warning / critical
+4. **Battery (EV) (3D):** Leakage-safe XGBoost on cycle-level `SOH_pct`; chronological evaluation; warn < 80%, critical < 65%
+5. **Tire wear (3E):** XGBoost regression of logistics-derived `Tire_Wear_pct` (from `TPI`) using the dataset's predefined Train / Validation / Test partitions; raw `TPI` and downstream maintenance indexes are excluded; warn ≥ 70%, critical ≥ 90%. This is a wear-risk proxy, not measured tread depth.
 6. **Kuksa VSS I/O (3F):** Databroker subscribe/store plus mock sensor simulator for demos without hardware
-7. **Unified maintenance pipeline (3G):** Telemetry snapshot → 3B–3E with partial-failure handling, alert thresholds, and SHAP top-feature explanations in the same response
+7. **Unified maintenance pipeline (3G):** Nested component inputs or one enriched feature map → independent 3B–3E inference with partial-failure handling, alert thresholds, and the top three native XGBoost SHAP contributions in the same response. Raw 3F VSS lacks several dataset-specific fields, so unavailable components report their missing feature contract rather than receiving fabricated values.
 8. **Backend API and jobs (3H):** REST endpoints + Celery batch predictions persisted to `maintenance_predictions`
 9. **Maintenance UI (3I):** Next.js component health cards, alerts, and SHAP/feature contribution views
+
+**Training note:** Modules 3B–3E train locally in notebooks (CPU is enough). Module 3A only prepares features/frames — it does not train models.
 
 **Scope rules:** 3B–3E train/infer independently; 3F may run in parallel via the mock simulator; 3G tolerates partial model failures (same spirit as Module 2G); 3H wires 3G; 3I wires 3H. Training is CPU-friendly — no GPU detector requirement.
 
@@ -811,8 +813,8 @@ safety_score = max(0, min(100, base_score + sum(penalties)))
 
 | Component | Metric | Warning | Critical |
 |-----------|--------|---------|---------|
-| Engine | Anomaly score | > 0.60 | > 0.80 |
-| Brakes | Estimated pad thickness | < 5mm | < 3mm |
+| Engine | Fault / anomaly score | > 0.60 | > 0.80 |
+| Brakes | Condition class | Fair | Poor |
 | Battery | Health percentage | < 80% | < 65% |
 | Tires | Wear percentage | > 70% | > 90% |
 
@@ -1156,11 +1158,14 @@ bmw-ai-platform/
 │   │   ├── pedestrian_temporal.py        # Caltech YOLO-LSTM localization
 │   │   └── pipeline.py                    # Unified stateful 2B–2F pipeline (2G)
 │   ├── predictive_maintenance/
-│   │   ├── data_generator.py             # AI4I loaders + synthetic degradation (3A)
-│   │   ├── engine_model.py               # LSTM Autoencoder anomaly detection (3B)
-│   │   ├── brake_model.py                # XGBoost brake wear regression (3C)
-│   │   ├── battery_model.py              # Battery degradation curve (3D)
-│   │   ├── tire_model.py                 # Tire wear linear model (3E)
+│   │   ├── config.py                     # Local CSV paths + thresholds (3A)
+│   │   ├── datasets.py                   # Loaders + train-ready frames (3A)
+│   │   ├── features.py                   # Feature engineering transforms (3A)
+│   │   ├── data_generator.py             # prepare_all_module_frames facade (3A)
+│   │   ├── engine_model.py               # Engine / fault model (3B)
+│   │   ├── brake_model.py                # Brake condition classification (3C)
+│   │   ├── battery_model.py              # Battery SoH models (3D)
+│   │   ├── tire_model.py                 # Tire wear from logistics TPI (3E)
 │   │   └── pipeline.py                   # Unified 3B–3E orchestration + SHAP (3G)
 │   ├── risk_engine/
 │   │   ├── aggregator.py                 # Composite weighted risk scoring
@@ -1174,12 +1179,10 @@ bmw-ai-platform/
 │   │   ├── gradcam.py                    # EigenCAM for YOLOv8 models
 │   │   ├── shap_explainer.py             # SHAP TreeExplainer wrapper (used by 3G)
 │   │   └── nl_explainer.py               # LLM-powered NL explanation generator
-│   ├── training/                          # Kaggle/Colab training scripts
+│   ├── training/                          # Training helpers
 │   │   ├── train_driver_yolo.py          # DMD → YOLOv8n fine-tuning
 │   │   ├── train_road_yolo.py            # Optional BDD100K object detector
 │   │   ├── train_pedestrian_temporal.py  # Caltech frames → YOLO-LSTM
-│   │   ├── train_engine_lstm.py          # AI4I → LSTM Autoencoder (3B)
-│   │   ├── train_maintenance_xgb.py      # Synthetic → XGBoost models (3C/3D)
 │   │   └── mlflow_logger.py              # MLflow tracking wrapper
 │   └── demo/
 │       ├── demo_runner.py                # Replay recorded video + telemetry
@@ -1217,7 +1220,10 @@ bmw-ai-platform/
 ├── notebooks/                            # Development/exploration notebooks
 │   ├── 01_ear_threshold_validation.ipynb
 │   ├── 02_bdd100k_exploration.ipynb
-│   ├── 03_maintenance_feature_engineering.ipynb  # AI4I + synthetic features (3A)
+│   ├── 03_maintenance_feature_engineering.ipynb  # Local EVIoT/NEV/logistics frames (3A)
+│   ├── train_engine_fault_3b.ipynb        # Local NEV XGBoost classifier (3B)
+│   ├── train_brake_wear_3c.ipynb          # Local logistics classifier (3C)
+│   ├── train_battery_soh_3d.ipynb          # Chronological SoH regression (3D)
 │   └── 04_rag_evaluation.ipynb
 │
 ├── .env.example
@@ -1993,134 +1999,153 @@ class TemporalPedestrianYOLOLSTM(nn.Module):
 
 | ID | Name | Deliverable |
 |----|------|-------------|
-| 3A | Feature engineering and datasets | AI4I loaders, feature transforms, synthetic generators |
-| 3B | Engine health | LSTM autoencoder anomaly score |
-| 3C | Brake wear | XGBoost pad-thickness regressor |
-| 3D | Battery (EV) | SoH % + months-to-replacement |
-| 3E | Tire wear | Wear % + km-to-replacement |
+| 3A | Feature engineering and datasets | Local loaders for EVIoT / battery / NEV / logistics + feature frames |
+| 3B | Engine health | NEV fault classifier (+ optional autoencoder) — local notebook |
+| 3C | Brake condition | XGBoost Good/Fair/Poor classifier on logistics data — local notebook |
+| 3D | Battery (EV) | Chronological SoH regression on cycle-aging CSV — local notebook |
+| 3E | Tire wear | Leakage-safe XGBoost `Tire_Wear_pct` proxy from logistics `TPI` — local notebook |
 | 3F | Kuksa VSS I/O | Databroker subscribe/store + mock simulator |
-| 3G | Unified maintenance pipeline | Orchestrate 3B–3E + SHAP explanations |
+| 3G | Unified maintenance pipeline | Partial-failure 3B–3E orchestration + native XGBoost SHAP explanations |
 | 3H | Backend API and jobs | REST + Celery → `maintenance_predictions` |
 | 3I | Maintenance UI | Next.js health cards, alerts, feature contributions |
 
-#### Step 3.1 — Load AI4I Dataset and Train Models (3A / 3B foundation)
+#### Step 3.1 — Local feature preparation and 3B fault training
+
+Module 3A loads the four local CSVs from `data/predictive_maintenance/`.
+Run `notebooks/03_maintenance_feature_engineering.ipynb` to inspect the
+train-ready frames.
+
+Module 3B uses `NEV_fault_dataset.csv` to train a four-class XGBoost
+classifier:
 
 ```python
-# This trains locally or on Colab CPU — no GPU needed
-from ucimlrepo import fetch_ucirepo
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report
-import xgboost as xgb
-import shap
-import mlflow
+from ml.predictive_maintenance import prepare_engine_fault_frame
 
-mlflow.set_tracking_uri("http://localhost:5000")
-
-# ── Load dataset ──
-dataset = fetch_ucirepo(id=601)
-X = dataset.data.features
-y = dataset.data.targets
-
-print(f"Dataset shape: {X.shape}")
-print(f"Failure rate: {y['Machine failure'].mean():.2%}")
-print(f"Features: {X.columns.tolist()}")
-# Features: ['Air temperature [K]', 'Process temperature [K]',
-#            'Rotational speed [rpm]', 'Torque [Nm]', 'Tool wear [min]']
-
-# ── Feature engineering ──
-X['temp_ratio'] = X['Process temperature [K]'] / X['Air temperature [K]']
-X['power'] = X['Rotational speed [rpm]'] * X['Torque [Nm]']
-X['wear_rate'] = X['Tool wear [min]'] / (X['Rotational speed [rpm]'] + 1)
-
-# ── Train XGBoost failure classifier ──
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y['Machine failure'], test_size=0.2, stratify=y['Machine failure'], random_state=42
-)
-
-with mlflow.start_run(run_name="xgboost_maintenance_v1"):
-    model = xgb.XGBClassifier(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.1,
-        scale_pos_weight=(y_train == 0).sum() / (y_train == 1).sum(),  # Handle class imbalance
-        use_label_encoder=False,
-        eval_metric='logloss',
-        random_state=42
-    )
-    model.fit(X_train, y_train,
-              eval_set=[(X_test, y_test)],
-              early_stopping_rounds=20,
-              verbose=False)
-
-    y_pred = model.predict(X_test)
-    report = classification_report(y_test, y_pred, output_dict=True)
-
-    mlflow.log_params(model.get_params())
-    mlflow.log_metric("f1_failure_class", report['1']['f1-score'])
-    mlflow.log_metric("precision_failure", report['1']['precision'])
-    mlflow.log_metric("recall_failure", report['1']['recall'])
-    mlflow.xgboost.log_model(model, "maintenance_xgb_model")
-
-    print(classification_report(y_test, y_pred))
-
-# ── SHAP explanation ──
-explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(X_test)
-shap.summary_plot(shap_values, X_test, show=False)
-# Save plot as artifact
+frame = prepare_engine_fault_frame()
+X_train, X_test, y_train, y_test = frame.train_test_split(stratify=True)
 ```
+
+The complete leakage-safe train/validation/test workflow, early stopping,
+metrics, confusion matrix, feature importance, artifact metadata, and reload
+check live in `notebooks/train_engine_fault_3b.ipynb`. It writes
+`ml/models/engine_fault_clf.joblib`, consumed by
+`ml.predictive_maintenance.EngineFaultClassifier`.
+
+Module 3C trains locally in `notebooks/train_brake_wear_3c.ipynb`. The original
+EVIoT pad-wear regression was rejected after it failed to beat the mean
+baseline. Option A redefines 3C as logistics `Brake_Condition` classification
+(`Good`, `Fair`, `Poor`) using leakage-safe telemetry and usage features. It
+saves `ml/models/brake_condition_xgb.joblib`, consumed by
+`ml.predictive_maintenance.BrakeConditionClassifier`.
+
+Module 3D trains locally in `notebooks/train_battery_soh_3d.ipynb` using the
+cycle-aging CSV. It excludes `Capacity_Ah` because capacity directly defines
+`SOH_pct`, and excludes EVIoT SoH after profiling found no telemetry
+relationship. A chronological 70/15/15 split measures future-cycle behavior
+against a last-known-SOH baseline. The accepted model is refit on all cycles
+and saved as `ml/models/battery_soh_xgb.joblib`.
 
 #### Step 3.2 — Kuksa Signal Subscription (3F)
 
-Create `sdv/kuksa/signal_subscriber.py`:
+Implemented in:
 
-```python
-import asyncio
-import logging
-from kuksa_client.grpc import VSSClient
-from app.core.database import get_async_session
-from app.models.vehicle import VehicleTelemetry
+- `sdv/kuksa/signal_subscriber.py` — async `kuksa_client.grpc.aio.VSSClient`
+  adapter, typed `TelemetrySnapshot`, partial-update merging, one-shot reads,
+  streaming, and injectable stores
+- `sdv/kuksa/vss_config.json` — VSS path → database field contract
+- `apps/backend/app/services/kuksa_service.py` — backend-configured subscriber
+  with `SqlAlchemyTelemetryStore` persistence to `vehicle_telemetry`
+- `sdv/mock/sensor_simulator.py` — deterministic broker-free telemetry and
+  optional publishing of current values to Kuksa
 
-logger = logging.getLogger(__name__)
+The live broker remains optional in tests. `InMemoryTelemetryStore` and an
+injectable client factory let subscription, storage, and partial-update
+behavior run without Docker or vehicle hardware. Production/demo connectivity
+uses `KUKSA_HOST`, `KUKSA_PORT`, `kuksa-client==0.5.2`, and the Databroker
+service in `infra/docker-compose.yml`.
 
-VSS_SIGNALS = [
-    "Vehicle.Speed",
-    "Vehicle.OBD.RPM",
-    "Vehicle.OBD.OilTemp",
-    "Vehicle.OBD.CoolantTemp",
-    "Vehicle.Chassis.Axle.Row1.Wheel.Left.Tire.Pressure",
-    "Vehicle.Chassis.Axle.Row1.Wheel.Right.Tire.Pressure",
-    "Vehicle.Chassis.Axle.Row2.Wheel.Left.Tire.Pressure",
-    "Vehicle.Chassis.Axle.Row2.Wheel.Right.Tire.Pressure",
-    "Vehicle.Powertrain.TractionBattery.StateOfCharge.Current",
-    "Vehicle.Powertrain.TractionBattery.StateOfHealth",
-]
+#### Step 3.3 — Unified Maintenance Pipeline (3G)
 
-async def subscribe_and_store(vehicle_id: str):
-    """Subscribe to Kuksa VSS signals and persist to TimescaleDB."""
-    async with VSSClient("127.0.0.1", 55555) as client:
-        logger.info(f"Connected to Kuksa Databroker for vehicle {vehicle_id}")
-        async for update in client.subscribe_current_values(VSS_SIGNALS):
-            telemetry = {}
-            for path, value in update.items():
-                telemetry[path] = value.value
+Implemented in `ml/predictive_maintenance/pipeline.py` with shared native
+TreeSHAP extraction in `ml/xai/shap_explainer.py`.
 
-            # Store to TimescaleDB
-            async with get_async_session() as session:
-                reading = VehicleTelemetry(
-                    vehicle_id=vehicle_id,
-                    speed_kmh=telemetry.get("Vehicle.Speed"),
-                    rpm=telemetry.get("Vehicle.OBD.RPM"),
-                    oil_temp_c=telemetry.get("Vehicle.OBD.OilTemp"),
-                    tire_pressure_fl=telemetry.get("Vehicle.Chassis.Axle.Row1.Wheel.Left.Tire.Pressure"),
-                    battery_soc_pct=telemetry.get("Vehicle.Powertrain.TractionBattery.StateOfCharge.Current"),
-                )
-                session.add(reading)
-                await session.commit()
-```
+`MaintenancePipeline.predict()` accepts either nested `engine`, `brake`,
+`battery`, and `tire` feature mappings or one flat enriched mapping. It
+validates each model's exact training contract, runs 3B–3E independently,
+derives normalized severity/maintenance alerts, and preserves successful
+component results when another model, artifact, feature set, or explanation is
+unavailable. Each successful XGBoost result includes the top three local SHAP
+contributions and risk direction.
+
+The models were trained on heterogeneous sources, so a raw Kuksa snapshot is
+not silently coerced into incompatible normalized NEV, cycle-aging, or
+logistics fields. Missing inputs remain explicit in the component result until
+3H or a telemetry-enrichment adapter joins VSS readings with stored vehicle
+history.
+
+#### Step 3.4 — Backend API, Celery jobs, and persistence (3H)
+
+Implemented in:
+
+- `apps/backend/app/services/maintenance_service.py` — lazily builds one
+  shared `MaintenancePipeline`, exposes artifact readiness, and maps
+  successful component results to `maintenance_predictions` rows (severity,
+  maintenance flag, raw result, and SHAP contributions stored in the
+  `shap_explanation` JSONB column; `ml_model_version="phase3-3g-v1"`)
+- `apps/backend/app/api/v1/maintenance.py` — real REST endpoints replacing the
+  Phase 0 scaffold
+- `apps/backend/app/tasks/maintenance.py` —
+  `app.tasks.maintenance.run_batch_predictions` Celery task that runs the 3G
+  pipeline off the request path and persists rows via
+  `async_session_maker`
+
+REST surface:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/maintenance/status` | Artifact readiness + per-component feature contracts, no inference |
+| `POST /api/v1/maintenance/{vehicle_id}/predict` | Run 3G synchronously, persist successful components, return the full pipeline contract |
+| `POST /api/v1/maintenance/{vehicle_id}/trigger` | Enqueue the Celery batch task; returns `task_id` |
+| `GET /api/v1/maintenance/{vehicle_id}` | Latest persisted prediction per component |
+| `GET /api/v1/maintenance/{vehicle_id}/history` | Recent predictions, newest first (bounded `limit`) |
+| `GET /api/v1/maintenance/{vehicle_id}/{component}` | Latest row incl. SHAP payload for `engine`/`brake`/`battery`/`tire` |
+
+Design decisions: `predict` accepts the same nested-or-flat telemetry payload
+as 3G, so partial results (`unavailable` components with explicit missing
+features) flow through the API unchanged; persistence failures degrade to
+`persisted: 0` without discarding the inference response; the Celery task
+requires an explicit telemetry payload because raw VSS alone does not satisfy
+the 3B–3E training contracts. Tests live in
+`apps/backend/tests/test_maintenance_api.py` with ML inference and the DB
+session mocked.
+
+#### Step 3.5 — Predictive maintenance dashboard (3I)
+
+Implemented as a responsive Next.js 14 App Router page at
+`apps/frontend/src/app/maintenance/page.tsx`, backed by:
+
+- `apps/frontend/src/components/maintenance/MaintenanceDashboard.tsx` —
+  vehicle selection, model readiness, synchronous 3G inference, component
+  health cards, maintenance alerts, persisted health trends, explicit
+  unavailable/error states, and top native XGBoost SHAP contributions
+- `apps/frontend/src/lib/api.ts` — typed 3H status, latest, history, and
+  prediction requests through the shared authenticated Axios client
+- `apps/frontend/src/lib/types.ts` — end-to-end TypeScript contracts for 3H
+  responses, component states, severity, persisted rows, and explanations
+
+The dashboard displays model health scores on a 0–100% presentation scale
+while retaining the API's normalized 0–1 values. A JSON telemetry editor can
+generate its nested feature template directly from the 3H status contract;
+the operator supplies real values before inference. Missing fields and
+component failures remain visible rather than being replaced with synthetic
+telemetry. Recharts visualizes persisted engine, brake, battery, and tire
+health history, and each component card shows risk direction for its top
+three local feature contributions. Home, driver, road, and fleet dashboard
+navigation now link to `/maintenance`.
+
+Frontend verification uses `npm run type-check`, `npm run lint`, and
+`npm run build`. The backend prediction row schema includes `created_at` so
+the trend chart can use actual persistence timestamps.
 
 ---
 

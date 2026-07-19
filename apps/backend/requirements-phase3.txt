@@ -1,0 +1,12 @@
+# Phase 3 local predictive-maintenance training notebooks
+pandas>=2.2
+numpy>=1.24
+scikit-learn>=1.6
+xgboost==3.3.0
+joblib>=1.4
+matplotlib>=3.8
+seaborn>=0.13
+jupyter>=1.0
+
+# Module 3F Kuksa VSS runtime
+kuksa-client==0.5.2

@@ -58,3 +58,52 @@ Deps:
 ```bash
 pip install -r apps/backend/requirements-phase2.txt
 ```
+
+## Phase 3 — Predictive maintenance
+
+Module 3B artifact:
+
+- `engine_fault_clf.joblib` — four-class XGBoost classifier trained on
+  `NEV_fault_dataset.csv`
+- Classes: normal, motor fault, inverter fault, battery fault
+- Train locally with `notebooks/train_engine_fault_3b.ipynb`
+
+The saved joblib bundle contains the model, ordered feature contract, class
+names, dependency versions, and test metrics. It is loaded by
+`ml.predictive_maintenance.EngineFaultClassifier`.
+
+Module 3C artifact:
+
+- `brake_condition_xgb.joblib` — XGBoost classifier for logistics
+  `Brake_Condition` (`Good`, `Fair`, `Poor`)
+- Train locally with `notebooks/train_brake_wear_3c.ipynb`
+- Loaded by `ml.predictive_maintenance.BrakeConditionClassifier`
+
+This replaces the rejected EVIoT pad-wear regressor. The logistics feature
+contract excludes direct maintenance outputs and derived predictive indexes.
+
+Module 3D artifact:
+
+- `battery_soh_xgb.joblib` — cycle-aging XGBoost regressor for `SOH_pct`
+- Train locally with `notebooks/train_battery_soh_3d.ipynb`
+- Loaded by `ml.predictive_maintenance.BatterySoHPredictor`
+
+The bundle excludes `Capacity_Ah` to prevent target leakage, stores observed
+feature ranges, and records metrics from a chronological future-cycle test.
+
+Module 3E artifact:
+
+- `tire_wear_model.joblib` — XGBoost regressor for the logistics
+  `Tire_Wear_pct` proxy derived from `TPI`
+- Train locally with `notebooks/train_tire_wear_3e.ipynb`
+- Loaded by `ml.predictive_maintenance.TireWearPredictor`
+
+The model uses the dataset's predefined Train / Validation / Test partitions.
+Raw `TPI` and downstream maintenance/predictive outputs are excluded from its
+features. This output is a wear-risk proxy, not measured tire tread depth.
+
+Module 3G has no additional model artifact. `MaintenancePipeline` loads the
+3B–3E bundles, runs each component independently, and requests native XGBoost
+`pred_contribs` values for the top three local SHAP feature contributions.
+This avoids a second serialized explainer while retaining exact TreeSHAP
+contributions in raw-margin units.

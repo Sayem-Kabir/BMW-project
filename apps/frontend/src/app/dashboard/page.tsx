@@ -23,6 +23,12 @@ export default function DashboardPage() {
           >
             Road understanding
           </Link>
+          <Link
+            href="/maintenance"
+            className="rounded-lg bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-violet-600"
+          >
+            Predictive maintenance
+          </Link>
         </div>
       </div>
       <div className="grid gap-4 md:grid-cols-3">

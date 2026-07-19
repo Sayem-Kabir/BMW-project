@@ -141,3 +141,99 @@ export interface RoadAnalysis {
   phase: string;
   message: string;
 }
+
+export type MaintenanceComponent = "engine" | "brake" | "battery" | "tire";
+export type MaintenanceSeverity = "normal" | "warning" | "critical" | "unknown";
+export type MaintenanceComponentStatus = "ok" | "unavailable" | "error";
+
+export interface MaintenanceFeatureContribution {
+  feature: string;
+  value: number;
+  contribution: number;
+  direction: "increases_risk" | "decreases_risk";
+}
+
+export interface MaintenanceExplanation {
+  output_index: number;
+  base_value: number;
+  top_features: MaintenanceFeatureContribution[];
+  method: string;
+}
+
+export interface MaintenanceComponentSummary {
+  component: MaintenanceComponent;
+  status: MaintenanceComponentStatus;
+  severity: MaintenanceSeverity | null;
+  health_score: number | null;
+  maintenance_required: boolean | null;
+  confidence: number | null;
+  result: Record<string, unknown> | null;
+  explanation: MaintenanceExplanation | null;
+  explanation_error: string | null;
+  missing_features: string[];
+  error: string | null;
+  latency_ms: number;
+}
+
+export interface MaintenanceAlert {
+  component: MaintenanceComponent;
+  severity: MaintenanceSeverity;
+  message: string;
+}
+
+export interface MaintenanceRunResponse {
+  vehicle_id: string;
+  status: "complete" | "partial" | "failed";
+  overall_severity: MaintenanceSeverity;
+  timestamp: string;
+  components: Record<MaintenanceComponent, MaintenanceComponentSummary>;
+  alerts: MaintenanceAlert[];
+  warnings: string[];
+  processing_ms: number;
+  stage_times_ms: Record<string, number>;
+  persisted: number;
+  ml_model_version: string;
+  phase: string;
+}
+
+export interface MaintenancePrediction {
+  id: string | null;
+  vehicle_id: string;
+  component: MaintenanceComponent;
+  health_score: number;
+  anomaly_score: number | null;
+  predicted_replacement_date: string | null;
+  predicted_remaining_km: number | null;
+  confidence: number | null;
+  shap_explanation: {
+    severity?: MaintenanceSeverity;
+    maintenance_required?: boolean;
+    result?: Record<string, unknown>;
+    explanation?: MaintenanceExplanation | null;
+    explanation_error?: string | null;
+  } | null;
+  ml_model_version: string | null;
+  created_at: string | null;
+}
+
+export interface MaintenanceStatus {
+  components: Record<
+    MaintenanceComponent,
+    { model_ready: boolean; required_features: string[] }
+  >;
+  all_models_ready: boolean;
+  ml_model_version: string;
+  phase: string;
+}
+
+export interface MaintenanceLatestResponse {
+  vehicle_id: string;
+  predictions: MaintenancePrediction[];
+  phase: string;
+}
+
+export interface MaintenanceHistoryResponse {
+  vehicle_id: string;
+  history: MaintenancePrediction[];
+  phase: string;
+}

@@ -1,5 +1,12 @@
 import axios from "axios";
-import type { DriverAnalysis, RoadAnalysis } from "@/lib/types";
+import type {
+  DriverAnalysis,
+  MaintenanceHistoryResponse,
+  MaintenanceLatestResponse,
+  MaintenanceRunResponse,
+  MaintenanceStatus,
+  RoadAnalysis,
+} from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -91,4 +98,40 @@ export async function getRoadStatus(): Promise<RoadAnalysis> {
     throw new Error(`Could not load road status (${res.status})`);
   }
   return res.json() as Promise<RoadAnalysis>;
+}
+
+export async function getMaintenanceStatus(): Promise<MaintenanceStatus> {
+  const { data } = await api.get<MaintenanceStatus>("/api/v1/maintenance/status");
+  return data;
+}
+
+export async function getMaintenanceLatest(
+  vehicleId: string
+): Promise<MaintenanceLatestResponse> {
+  const { data } = await api.get<MaintenanceLatestResponse>(
+    `/api/v1/maintenance/${encodeURIComponent(vehicleId)}`
+  );
+  return data;
+}
+
+export async function getMaintenanceHistory(
+  vehicleId: string,
+  limit = 100
+): Promise<MaintenanceHistoryResponse> {
+  const { data } = await api.get<MaintenanceHistoryResponse>(
+    `/api/v1/maintenance/${encodeURIComponent(vehicleId)}/history`,
+    { params: { limit } }
+  );
+  return data;
+}
+
+export async function runMaintenancePrediction(
+  vehicleId: string,
+  telemetry: Record<string, unknown>
+): Promise<MaintenanceRunResponse> {
+  const { data } = await api.post<MaintenanceRunResponse>(
+    `/api/v1/maintenance/${encodeURIComponent(vehicleId)}/predict`,
+    { telemetry }
+  );
+  return data;
 }

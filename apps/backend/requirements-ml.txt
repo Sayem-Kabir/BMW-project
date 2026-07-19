@@ -20,7 +20,7 @@ torchvision==0.18.0
 pytorch-grad-cam==1.5.0
 captum==0.7.0
 shap==0.45.1
-xgboost==2.1.1
+xgboost==3.3.0
 lightgbm==4.4.0
 langchain==0.2.0
 langgraph==0.1.0

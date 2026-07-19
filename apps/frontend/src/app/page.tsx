@@ -32,6 +32,12 @@ export default function Home() {
           >
             Road View
           </Link>
+          <Link
+            href="/maintenance"
+            className="inline-block px-8 py-3 bg-violet-700 border-2 border-violet-300 text-white font-bold rounded-lg hover:bg-violet-600"
+          >
+            Maintenance
+          </Link>
           <a
             href="http://localhost:8000/docs"
             className="inline-block px-8 py-3 bg-bmw-blue border-2 border-white text-white font-bold rounded-lg hover:bg-blue-800"

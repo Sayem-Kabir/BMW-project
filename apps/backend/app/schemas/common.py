@@ -175,6 +175,48 @@ class RoadAnalysisResponse(BaseModel):
     message: str = "Road frame processed by Modules 2B–2G"
 
 
+class MaintenancePredictRequest(BaseModel):
+    """Nested 3B–3E component feature maps, or one flat enriched map."""
+
+    telemetry: dict[str, Any] = Field(default_factory=dict)
+
+
+class MaintenanceComponentSummary(BaseModel):
+    component: str
+    status: str
+    severity: str | None = None
+    health_score: float | None = None
+    maintenance_required: bool | None = None
+    confidence: float | None = None
+    result: dict[str, Any] | None = None
+    explanation: dict[str, Any] | None = None
+    explanation_error: str | None = None
+    missing_features: list[str] = Field(default_factory=list)
+    error: str | None = None
+    latency_ms: float = 0.0
+
+
+class MaintenanceAlertSummary(BaseModel):
+    component: str
+    severity: str
+    message: str
+
+
+class MaintenanceRunResponse(BaseModel):
+    vehicle_id: UUID
+    status: str
+    overall_severity: str
+    timestamp: datetime
+    components: dict[str, MaintenanceComponentSummary]
+    alerts: list[MaintenanceAlertSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    processing_ms: float = 0.0
+    stage_times_ms: dict[str, float] = Field(default_factory=dict)
+    persisted: int = 0
+    ml_model_version: str
+    phase: str = "3H"
+
+
 class MaintenancePredictionResponse(BaseModel):
     id: UUID | None = None
     vehicle_id: UUID
@@ -186,6 +228,7 @@ class MaintenancePredictionResponse(BaseModel):
     confidence: float | None = None
     shap_explanation: dict[str, Any] | None = None
     ml_model_version: str | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

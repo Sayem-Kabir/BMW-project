@@ -124,15 +124,15 @@ bmw-ai-platform/
 - Live road-camera/upload UI with overlays and pipeline diagnostics (Module 2I)
 
 ### Phase 3 — Predictive Maintenance (Days 22–35)
-- Feature engineering: AI4I 2020 loaders + synthetic degradation generators (Module 3A)
-- LSTM autoencoder engine-health anomaly scoring (Module 3B)
-- XGBoost brake-wear pad-thickness regression (Module 3C)
-- Battery SoH / months-to-replacement model (Module 3D)
-- Tire wear % / km-to-replacement model (Module 3E)
-- Kuksa VSS subscribe/store + mock sensor simulator (Module 3F)
-- Unified maintenance pipeline with partial-failure handling and SHAP (Module 3G)
-- REST + Celery batch predictions persisted to the DB (Module 3H)
-- Maintenance UI: component health cards, alerts, feature contributions (Module 3I)
+- Local dataset loaders + feature engineering for EVIoT / battery / NEV / logistics (Module 3A)
+- NEV fault classifier / engine-health model (Module 3B) — train in local notebook
+- XGBoost brake-condition classification on logistics fleet data (Module 3C) — local notebook
+- Leakage-safe battery SoH regression on cycle-aging data (Module 3D) — local notebook
+- XGBoost tire-wear proxy regression from logistics `TPI` (Module 3E) — local notebook
+- Typed Kuksa VSS subscribe/store + deterministic broker-free simulator (Module 3F)
+- Unified 3B–3E pipeline with partial failures and native XGBoost SHAP contributions (Module 3G)
+- Maintenance REST API + Celery batch task running 3G and persisting per-component predictions with SHAP payloads (Module 3H)
+- Responsive `/maintenance` dashboard with component health cards, alerts, persisted trends, telemetry contract editor, and SHAP contributions (Module 3I)
 
 ### Phase 4 — Risk Engine & Events (Days 28–40)
 - Composite risk aggregation

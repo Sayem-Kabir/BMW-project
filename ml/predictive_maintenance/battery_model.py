@@ -1,0 +1,142 @@
+"""Module 3D — battery State-of-Health regression inference."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Mapping
+
+import numpy as np
+import pandas as pd
+
+from ml.predictive_maintenance.config import (
+    BATTERY_SOH_CRITICAL_PCT,
+    BATTERY_SOH_FEATURES,
+    BATTERY_SOH_MODEL_PATH,
+    BATTERY_SOH_WARN_PCT,
+)
+
+
+@dataclass(frozen=True)
+class BatterySoHResult:
+    soh_pct: float
+    severity: str
+    maintenance_required: bool
+    within_training_range: bool
+
+
+class BatterySoHPredictor:
+    """Load the 3D bundle and estimate battery SoH percentage."""
+
+    def __init__(
+        self,
+        model_path: str | Path = BATTERY_SOH_MODEL_PATH,
+        *,
+        bundle: Mapping[str, Any] | None = None,
+    ) -> None:
+        self.model_path = Path(model_path)
+        self._bundle = dict(bundle) if bundle is not None else None
+        self._model: Any | None = None
+        self._features: tuple[str, ...] = tuple(BATTERY_SOH_FEATURES)
+        self._feature_ranges: dict[str, tuple[float, float]] = {}
+        if self._bundle is not None:
+            self._configure_bundle(self._bundle)
+
+    @property
+    def ready(self) -> bool:
+        return self._bundle is not None or self.model_path.is_file()
+
+    @property
+    def model(self) -> Any:
+        """Loaded estimator exposed for Module 3G explanations."""
+        self.load()
+        return self._model
+
+    def _configure_bundle(self, bundle: Mapping[str, Any]) -> None:
+        if int(bundle.get("schema_version", 0)) != 1:
+            raise ValueError("Unsupported 3D artifact schema_version")
+        if "model" not in bundle:
+            raise ValueError("3D artifact bundle is missing 'model'")
+        if tuple(bundle.get("features", ())) != tuple(BATTERY_SOH_FEATURES):
+            raise ValueError(
+                "3D artifact feature contract does not match BATTERY_SOH_FEATURES"
+            )
+        if bundle.get("target") != "SOH_pct":
+            raise ValueError("3D artifact target must be SOH_pct")
+
+        raw_ranges = bundle.get("feature_ranges")
+        if not isinstance(raw_ranges, Mapping):
+            raise ValueError("3D artifact is missing feature_ranges")
+        ranges: dict[str, tuple[float, float]] = {}
+        for feature in BATTERY_SOH_FEATURES:
+            bounds = raw_ranges.get(feature)
+            if not isinstance(bounds, (list, tuple)) or len(bounds) != 2:
+                raise ValueError(f"3D artifact has invalid range for {feature}")
+            ranges[feature] = (float(bounds[0]), float(bounds[1]))
+
+        self._model = bundle["model"]
+        self._features = tuple(bundle["features"])
+        self._feature_ranges = ranges
+
+    def load(self) -> None:
+        if self._model is not None:
+            return
+        if not self.model_path.is_file():
+            raise FileNotFoundError(
+                f"3D model not found: {self.model_path}. "
+                "Run notebooks/train_battery_soh_3d.ipynb locally first."
+            )
+
+        import joblib
+
+        bundle = joblib.load(self.model_path)
+        if not isinstance(bundle, Mapping):
+            raise ValueError("3D artifact must be a mapping bundle")
+        self._bundle = dict(bundle)
+        self._configure_bundle(self._bundle)
+
+    def _frame_from_snapshot(
+        self, telemetry: Mapping[str, float | int]
+    ) -> tuple[pd.DataFrame, bool]:
+        missing = [name for name in self._features if name not in telemetry]
+        if missing:
+            raise ValueError(f"Missing 3D battery features: {missing}")
+
+        values: list[float] = []
+        within_range = True
+        for name in self._features:
+            value = float(telemetry[name])
+            if not np.isfinite(value):
+                raise ValueError(f"3D feature {name!r} must be finite")
+            low, high = self._feature_ranges[name]
+            within_range = within_range and low <= value <= high
+            values.append(value)
+        frame = pd.DataFrame([values], columns=self._features, dtype=np.float32)
+        return frame, within_range
+
+    def predict(self, telemetry: Mapping[str, float | int]) -> BatterySoHResult:
+        self.load()
+        frame, within_range = self._frame_from_snapshot(telemetry)
+        raw = np.asarray(self._model.predict(frame), dtype=float).reshape(-1)
+        if raw.size != 1 or not np.isfinite(raw[0]):
+            raise ValueError("3D model returned an invalid prediction")
+
+        soh_pct = float(np.clip(raw[0], 0.0, 100.0))
+        if soh_pct < BATTERY_SOH_CRITICAL_PCT:
+            severity = "critical"
+        elif soh_pct < BATTERY_SOH_WARN_PCT:
+            severity = "warning"
+        else:
+            severity = "normal"
+        return BatterySoHResult(
+            soh_pct=soh_pct,
+            severity=severity,
+            maintenance_required=severity != "normal",
+            within_training_range=within_range,
+        )
+
+
+def battery_soh_model_ready(
+    model_path: str | Path = BATTERY_SOH_MODEL_PATH,
+) -> bool:
+    return Path(model_path).is_file()
