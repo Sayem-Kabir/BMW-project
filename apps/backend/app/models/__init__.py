@@ -6,6 +6,7 @@ from app.models.telemetry import VehicleTelemetry
 from app.models.session import DriverSession
 from app.models.event import SafetyEvent
 from app.models.maintenance import MaintenancePrediction
+from app.models.risk_score import RiskScoreRecord
 from app.models.score import DriverScore
 from app.models.assistant import AssistantConversation
 
@@ -18,6 +19,7 @@ __all__ = [
     "DriverSession",
     "SafetyEvent",
     "MaintenancePrediction",
+    "RiskScoreRecord",
     "DriverScore",
     "AssistantConversation",
 ]

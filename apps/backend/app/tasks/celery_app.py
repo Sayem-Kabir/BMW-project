@@ -10,6 +10,7 @@ celery_app = Celery(
         "app.tasks.scoring",
         "app.tasks.events",
         "app.tasks.maintenance",
+        "app.tasks.risk",
     ],
 )
 

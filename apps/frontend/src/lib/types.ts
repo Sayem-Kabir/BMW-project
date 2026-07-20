@@ -237,3 +237,197 @@ export interface MaintenanceHistoryResponse {
   history: MaintenancePrediction[];
   phase: string;
 }
+
+export interface RiskFactor {
+  key: string;
+  label: string;
+  weight: number;
+  contribution: number;
+  reason: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface RiskOverride {
+  rule_id: string;
+  reason: string;
+  previous_score: number;
+  resulting_score: number;
+  previous_level: string;
+  resulting_level: string;
+  evidence: Record<string, unknown>;
+}
+
+export interface RiskScore {
+  vehicle_id: string;
+  score: number;
+  level: RiskLevel;
+  risk_score?: number;
+  risk_level?: RiskLevel;
+  factors: RiskFactor[];
+  reasons: string[];
+  overrides: RiskOverride[];
+  base_score?: number | null;
+  base_level?: RiskLevel | null;
+  timestamp: string;
+  method?: string | null;
+  phase?: string;
+  message?: string | null;
+}
+
+export interface RiskComputeResponse extends RiskScore {
+  published: boolean;
+  receivers: number;
+  cached: boolean;
+  persisted: boolean;
+  record_id?: string | null;
+  warning?: string | null;
+  persist_warning?: string | null;
+}
+
+export interface RiskHistoryItem {
+  id: string;
+  vehicle_id: string;
+  score: number;
+  level: RiskLevel;
+  timestamp: string;
+  factors: RiskFactor[];
+  reasons: string[];
+  overrides: RiskOverride[];
+}
+
+export interface RiskHistoryResponse {
+  vehicle_id: string;
+  history: RiskHistoryItem[];
+  count: number;
+  phase: string;
+  warning?: string | null;
+}
+
+export interface SafetyEvent {
+  id: string;
+  vehicle_id: string;
+  driver_id: string;
+  session_id?: string | null;
+  event_type: string;
+  severity: RiskLevel;
+  timestamp: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  telemetry_snapshot?: Record<string, unknown> | null;
+  video_clip_url?: string | null;
+  xai_explanation?: string | null;
+  acknowledged: boolean;
+  acknowledged_at?: string | null;
+}
+
+export interface EventListResponse {
+  vehicle_id: string;
+  events: SafetyEvent[];
+  count: number;
+  phase: string;
+  warning?: string | null;
+}
+
+export interface EventDetectResponse {
+  vehicle_id: string;
+  driver_id: string;
+  session_id?: string | null;
+  detected: number;
+  persisted: number;
+  events: Array<{
+    id: string;
+    event_type: string;
+    severity: RiskLevel;
+    timestamp: string;
+    video_clip_url?: string | null;
+    xai_explanation?: string | null;
+  }>;
+  warnings: string[];
+  skipped_detectors: string[];
+  completed_at: string;
+  phase: string;
+}
+
+export interface FleetRiskWebSocketMessage {
+  type: "connected" | "risk_update" | "pong" | "error";
+  data?: RiskScore;
+  channel?: string;
+  org_id?: string;
+  phase?: string;
+  message?: string;
+  timestamp?: string;
+}
+
+export interface ChatResponse {
+  conversation_id?: string | null;
+  vehicle_id?: string | null;
+  message: string;
+  reply: string;
+  intent: string;
+  route: string;
+  citations: string[];
+  obd_matches: Array<Record<string, string>>;
+  telemetry_context?: string | null;
+  maintenance_context?: string | null;
+  conversation_memory?: string | null;
+  memory_message_count?: number;
+  llm_backend?: string | null;
+  llm_model?: string | null;
+  warnings: string[];
+  phase: string;
+}
+
+export interface ConversationDetailResponse {
+  id: string;
+  vehicle_id?: string | null;
+  driver_id?: string | null;
+  started_at: string;
+  messages: Array<{ role?: string; content?: string; [key: string]: unknown }>;
+  phase: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  vehicle_id?: string | null;
+  driver_id?: string | null;
+  started_at: string;
+  message_count: number;
+  last_user_message?: string | null;
+  last_assistant_message?: string | null;
+}
+
+export interface ConversationListResponse {
+  vehicle_id: string;
+  conversations: ConversationSummary[];
+  count: number;
+  phase: string;
+  warning?: string | null;
+}
+
+export interface AssistantSseMeta {
+  type: "meta";
+  conversation_id?: string | null;
+  vehicle_id?: string | null;
+  intent?: string;
+  route?: string;
+  citations?: string[];
+  llm_backend?: string | null;
+  llm_model?: string | null;
+  maintenance_context?: string | null;
+  memory_message_count?: number;
+  warnings?: string[];
+  phase?: string;
+}
+
+export interface AssistantSseToken {
+  type: "token";
+  text: string;
+}
+
+export interface AssistantSseDone {
+  type: "done";
+  reply?: string;
+  conversation_id?: string | null;
+  phase?: string;
+}
+

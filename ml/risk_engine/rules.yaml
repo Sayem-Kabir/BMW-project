@@ -1,0 +1,56 @@
+schema_version: "1.0"
+
+risk_overrides:
+  - id: drowsy_pedestrian_path
+    description: Drowsy driver with a pedestrian in the immediate path
+    enabled: true
+    when:
+      all:
+        - source: driver
+          field: is_drowsy
+          operator: eq
+          value: true
+        - source: derived
+          field: nearest_pedestrian_distance_m
+          operator: lt
+          value: 10.0
+    action:
+      minimum_score: 100.0
+      minimum_level: CRITICAL
+      reason: "Drowsy driver with pedestrian in immediate path"
+
+  - id: unbelted_highway_speed
+    description: Unbelted occupant travelling at highway speed
+    enabled: true
+    when:
+      all:
+        - source: driver
+          field: seatbelt_worn
+          operator: eq
+          value: false
+        - source: telemetry
+          field: speed_kmh
+          operator: gt
+          value: 60.0
+    action:
+      minimum_score: 75.0
+      minimum_level: HIGH
+      reason: "Unbelted at highway speed"
+
+  - id: phone_in_school_zone
+    description: Phone usage while driving in a school zone
+    enabled: true
+    when:
+      all:
+        - source: driver
+          field: phone_detected
+          operator: eq
+          value: true
+        - source: telemetry
+          field: school_zone
+          operator: eq
+          value: true
+    action:
+      minimum_score: 100.0
+      minimum_level: CRITICAL
+      reason: "Phone usage in school zone"

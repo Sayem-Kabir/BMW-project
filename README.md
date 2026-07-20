@@ -88,11 +88,11 @@ bmw-ai-platform/
 | **01** | Driver Monitoring | Real-time drowsiness (EAR), yawning (MAR), head pose, phone/smoking detection |
 | **02** | Cabin Intelligence | Seat occupancy detection, child detection, unattended vehicle alerts |
 | **03** | Road Understanding | Segmentation, YOLO/ByteTrack, MiDaS depth, HSV traffic lights, Caltech temporal pedestrian localization |
-| **04** | Risk Prediction | Weighted risk scoring (0–100) with hard override rules |
+| **04** | Risk Prediction | Modules 4A–4F: weighted risk scoring, YAML overrides, Redis distribution, TTC + event detectors, persistence + MinIO clips, REST/Celery |
 | **05** | Driver Behavior | Weekly safety scoring, harsh braking/speeding tracking |
 | **06** | Predictive Maintenance | Modules 3A–3I: datasets, engine/brake/battery/tire models, Kuksa I/O, pipeline, API, UI |
 | **07** | AI Assistant | LangGraph agent with RAG + live Kuksa telemetry context |
-| **08** | Safety Events | TTC calculation, incident detection, video clip logging |
+| **08** | Safety Events | Module 4G: live risk & events UI (complete) |
 | **09** | Fleet Dashboard | Multi-vehicle real-time monitoring with WebSocket updates |
 | **10** | Explainable AI | Grad-CAM heatmaps + SHAP values + natural language explanations |
 
@@ -135,14 +135,22 @@ bmw-ai-platform/
 - Responsive `/maintenance` dashboard with component health cards, alerts, persisted trends, telemetry contract editor, and SHAP contributions (Module 3I)
 
 ### Phase 4 — Risk Engine & Events (Days 28–40)
-- Composite risk aggregation
-- Safety event detection (TTC, drowsiness)
-- MinIO video clip storage
+- Pure weighted risk scoring core with immutable factor evidence, continuous LOW–CRITICAL bands, and 22 unit tests (Module 4A — complete)
+- Safe declarative YAML overrides with auditable evidence and no-downgrade severity floors (Module 4B — complete)
+- Redis pub/sub risk distribution to fleet WebSockets (Module 4C — complete): `risk_service` evaluates 4A/4B, caches latest score, publishes `risk:{vehicle_id}`, and `/api/v1/fleet/ws/{org_id}` fans out `risk_update` frames
+- TTC + safety event detectors on 1G/2G/3F outputs (Module 4D — complete): `event_detector.py` with near-collision, driver-asleep, unsafe-following, hard-braking, prolonged-phone, and pedestrian-proximity detectors using Module 08 thresholds
+- Event persistence with telemetry snapshots, rule-based XAI explanations, and 30 s MinIO video clips (Module 4E — complete): `event_service` + rolling clip buffer + Celery clip retry
+- Real risk/events REST endpoints, durable risk history, acknowledge flow, and Celery jobs (Module 4F — complete)
+- Live risk gauge fed by fleet WebSocket, persisted risk trends, and acknowledgeable safety event feed with XAI + clip links (Module 4G — complete)
 
 ### Phase 5 — AI Assistant (Days 35–50)
-- LangGraph stateful agent
-- RAG knowledge base (owner manual + OBD codes)
-- Ollama local LLM integration
+- **RAG knowledge base** — PDF/text ingestion → ChromaDB with `all-MiniLM-L6-v2` embeddings (Module 5A — complete)
+- **RAG retrieval pipeline** — intent classify → similarity search → cited context / OBD lookup (Module 5B — complete)
+- **Ollama assistant agent** — LangGraph-style nodes + RAG/telemetry prompt → `llama3.2:3b` (Module 5C — complete)
+- **Assistant REST API** — `POST /api/v1/assistant/chat` (SSE/JSON) + conversation history (Module 5D — complete)
+- **Assistant chat UI** — `/assistant` with SSE streaming, citations, and history (Module 5E — complete)
+- **Context-aware prompts** — telemetry + predictive maintenance injected into answers (Module 5F — complete)
+- **Multi-turn conversation memory** — prior turns loaded into the agent prompt + history reload in UI (Module 5G — complete)
 
 ### Phase 6 — Dashboard & XAI (Days 45–62)
 - Fleet real-time WebSocket updates
@@ -174,6 +182,53 @@ cp .env.example .env
 cd apps/backend
 pip install -r requirements.txt
 ```
+
+### Phase 5A — RAG knowledge base (optional)
+
+```bash
+pip install -r apps/backend/requirements-rag.txt
+python scripts/build_knowledge_base.py --reset
+```
+
+This ingests `data/bmw_owner_manual.txt`, `data/obd2_codes.txt`, and `data/service_intervals.txt` into local `chroma_db/` using `all-MiniLM-L6-v2` embeddings. On Windows (without MSVC), indexing uses a local JSON vector store automatically; use `--http` with Docker Chroma for a server-backed index.
+
+### Phase 5B — retrieve cited context (no LLM)
+
+```bash
+python scripts/demo_rag_retrieval.py
+python scripts/demo_rag_retrieval.py "Why is my TPMS warning on?"
+```
+
+### Phase 5C — ask the assistant (Ollama)
+
+```bash
+# Optional but recommended for real LLM answers:
+ollama serve
+ollama pull llama3.2:3b
+
+python scripts/demo_assistant_5c.py
+python scripts/demo_assistant_5c.py "What does P0420 mean?"
+```
+
+If Ollama is not running, the demo still works with an offline fallback answer grounded in RAG context.
+
+### Phase 5D — assistant HTTP API
+
+With the backend running:
+
+```bash
+# JSON response
+curl -X POST http://localhost:8000/api/v1/assistant/chat ^
+  -H "Content-Type: application/json" ^
+  -d "{\"message\":\"Why is my TPMS warning on?\",\"stream\":false,\"persist\":false}"
+
+# SSE stream (default)
+curl -N -X POST http://localhost:8000/api/v1/assistant/chat ^
+  -H "Content-Type: application/json" ^
+  -d "{\"message\":\"What does P0420 mean?\",\"stream\":true}"
+```
+
+Open the UI at [http://localhost:3000/assistant](http://localhost:3000/assistant). Selecting a past conversation reloads its messages; follow-ups reuse that thread as Module 5G memory.
 
 ## 📦 Installing Frontend Dependencies
 

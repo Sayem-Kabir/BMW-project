@@ -2154,9 +2154,40 @@ the trend chart can use actual persistence timestamps.
 
 **What you achieve:** A real-time risk scoring system that combines all module outputs and a safety event detection system with TTC calculation. Events are logged with video clips stored in MinIO.
 
+**Phase 4 module breakdown (4A–4G):**
+
+| Module | Scope | Deliverable |
+|---|---|---|
+| 4A | Risk scoring core | `ml/risk_engine/aggregator.py` — pure weighted scoring from driver/road/telemetry states, LOW–CRITICAL levels, human-readable reasons; no I/O |
+| 4B | Hard override rules | `ml/risk_engine/rules.yaml` + rule evaluator — declarative overrides (drowsy+pedestrian → CRITICAL, unbelted at highway speed → HIGH) |
+| 4C | Redis risk distribution | Publish `risk:{vehicle_id}` payloads; backend `risk_service` + WebSocket fan-out to fleet subscribers |
+| 4D | TTC + event detectors | `ml/risk_engine/event_detector.py` — TTC from confirmed tracks + depth, drowsy/phone/hard-braking/pedestrian-proximity detectors with Module 08 thresholds |
+| 4E | Event persistence + clips | `safety_events` rows with telemetry snapshot and natural-language XAI explanation; 30 s video clips to MinIO |
+| 4F | Risk/event REST + jobs | Real `/api/v1/risk` and `/api/v1/events` endpoints replacing scaffolds; Celery post-processing |
+| 4G | Live risk + events UI | Next.js risk gauge fed by WebSocket, event feed with acknowledge flow and clip links |
+
+**Scope rules:** 4A and 4B are pure Python with unit tests (no services); 4C requires Redis; 4D consumes 1G/2G pipeline outputs and 3F telemetry but tolerates missing sources; 4E requires Postgres + MinIO; 4F wires 4A–4E; 4G wires 4F. No model training anywhere in Phase 4.
+
 #### Step 4.1 — Risk Aggregation Engine
 
-Create `ml/risk_engine/aggregator.py`:
+Module 4A is implemented in `ml/risk_engine/aggregator.py` as a deterministic,
+side-effect-free scoring core. `compute_risk()` accepts driver state, road
+objects, and the future telemetry contract, then returns immutable
+`RiskResult` / `RiskFactor` dataclasses. Every triggered factor records its
+weight, contribution, reason, and evidence. It supports both `class` and
+`class_name` road object contracts, chooses the nearest pedestrian within
+10 m, and detects vehicles closing faster than 20 km/h. Invalid object
+measurements are ignored safely; scores are capped at 100 and mapped across
+continuous LOW (≤40), MEDIUM (≤65), HIGH (≤85), and CRITICAL (>85) bands.
+
+The 4A core intentionally performs no Redis, database, API, or filesystem I/O.
+Hard overrides from the original combined sketch below move to 4B, and Redis
+publishing moves to 4C. Public symbols are exported by
+`ml/risk_engine/__init__.py`; 22 boundary, contribution, explanation, malformed
+input, and serialization tests live in
+`ml/risk_engine/tests/test_aggregator.py`.
+
+Original combined design sketch (superseded by the 4A–4C split):
 
 ```python
 import asyncio
@@ -2243,6 +2274,193 @@ async def compute_and_publish_risk(
 
     return result
 ```
+
+#### Step 4.2 — Declarative Hard Override Rules (4B)
+
+Module 4B is implemented in `ml/risk_engine/rules.yaml` and
+`ml/risk_engine/rules.py`.
+
+The versioned YAML contract currently defines three safety overrides:
+
+| Rule | Conditions | Result floor |
+|---|---|---|
+| `drowsy_pedestrian_path` | Driver drowsy AND nearest pedestrian distance < 10 m | score 100, CRITICAL |
+| `unbelted_highway_speed` | Seatbelt not worn AND speed > 60 km/h | score 75, HIGH |
+| `phone_in_school_zone` | Phone detected AND `school_zone=true` | score 100, CRITICAL |
+
+Rules use structured `source`, `field`, `operator`, and `value` conditions;
+the evaluator never executes YAML strings or calls `eval`. Allowed sources and
+operators are validated, rule IDs must be unique, score floors must remain
+within 0–100, and unknown/malformed/non-finite values fail closed. Overrides
+can only increase score/severity; later rules never downgrade an existing
+CRITICAL result.
+
+`compute_risk_with_overrides()` composes the 4A weighted result with 4B and
+returns an immutable `RiskDecision`. Its audit trail preserves the base
+score/level plus every matching rule's evidence, previous/resulting score,
+previous/resulting level, and `OVERRIDE:` reason. The evaluator remains pure
+Python with no Redis, database, API, or filesystem writes. Module 4A + 4B have
+39 unit tests, including threshold boundaries, multiple-rule ordering,
+disabled rules, missing telemetry, safe YAML rejection, and serialization.
+
+#### Step 4.3 — Redis risk distribution and fleet WebSocket fan-out (4C)
+
+Implemented in:
+
+- `apps/backend/app/services/risk_service.py` — runs
+  `compute_risk_with_overrides`, normalizes the Redis payload
+  (`score`/`level` plus `risk_score`/`risk_level` aliases), caches
+  `risk:latest:{vehicle_id}` for 300 s, and publishes
+  `risk:{vehicle_id}`
+- `apps/backend/app/core/redis.py` — `publish_json` and
+  `iter_pattern_messages` helpers for JSON pub/sub
+- `apps/backend/app/api/v1/risk.py` — real endpoints:
+  - `POST /api/v1/risk/{vehicle_id}/compute` evaluates + optionally
+    publishes/caches
+  - `GET /api/v1/risk/current/{vehicle_id}` returns the latest cache
+    (or an empty LOW placeholder)
+  - `GET /api/v1/risk/history/{vehicle_id}` currently returns the
+    latest cache only; durable history remains Module 4F
+- `apps/backend/app/api/v1/ws.py` — `/api/v1/fleet/ws/{org_id}`
+  replaces the echo scaffold with a Redis `risk:*` pattern
+  subscription and pushes `{"type":"risk_update","data":...}` frames;
+  clients may send `ping` for `pong`
+
+Design decisions: scoring stays pure in `ml/risk_engine`; I/O lives in
+the backend service. Publish/cache failures degrade gracefully so the
+HTTP response still carries the computed decision. Organization-scoped
+channel filtering is deferred until fleet auth lands — every connected
+WS client currently receives the full `risk:*` stream. Tests live in
+`apps/backend/tests/test_risk_api.py` with Redis mocked.
+
+#### Step 4.4 — TTC calculation and safety event detectors (4D)
+
+Implemented in `ml/risk_engine/event_detector.py` as a pure, side-effect-free
+detector layer that consumes Phase 1 driver monitoring (1G), Phase 2 road
+understanding (2G), and Phase 3 Kuksa telemetry (3F). Missing inputs are
+tolerated — each detector skips when its required fields are absent and records
+the skip in `EventDetectionResult.skipped_detectors`.
+
+**TTC helper** — `compute_ttc_seconds(distance_m, relative_speed_kmh)` uses
+`distance / (relative_speed_kmh / 3.6)` and returns `None` when the object is
+not closing fast enough to produce a finite TTC.
+
+**Stateful `EventDetector`** — maintains phone-duration frames and speed history
+for deceleration; call `reset()` before a new drive stream. `process_frame()`
+returns immutable `SafetyEvent` / `EventDetectionResult` dataclasses with
+evidence and a telemetry snapshot (speed, EAR, risk score, GPS when present).
+
+| Event type | Trigger (Module 08) | Severity |
+|---|---|---|
+| `NEAR_COLLISION` | Confirmed vehicle track, TTC < 2.0 s | CRITICAL |
+| `DRIVER_ASLEEP` | `consecutive_drowsy_frames` > 60 (2 s @ 30 fps) | CRITICAL |
+| `UNSAFE_FOLLOWING_DISTANCE` | TTC < 4.0 s and speed > 60 km/h | HIGH |
+| `SUDDEN_HARD_BRAKING` | Longitudinal decel < −12 km/h/s | MEDIUM |
+| `PROLONGED_PHONE_USAGE` | Phone detected > 5 consecutive seconds | HIGH |
+| `PEDESTRIAN_PROXIMITY_HAZARD` | Confirmed/temporal pedestrian < 15 m with closing motion | HIGH |
+
+Design decisions: TTC uses confirmed vehicle tracks with `distance_m` and
+`relative_speed_kmh` from the 2G object contract; pedestrian hazards accept
+`temporally_confirmed` tracks. Near-collision takes precedence over unsafe-
+following for the same object (TTC < 2 s does not also emit unsafe-following).
+No Redis, database, API, or MinIO I/O — persistence and clips remain Module 4E.
+Public symbols are exported by `ml/risk_engine/__init__.py`; 14 unit tests live
+in `ml/risk_engine/tests/test_event_detector.py`.
+
+#### Step 4.5 — Event persistence and MinIO video clips (4E)
+
+Implemented in:
+
+- `ml/risk_engine/explanations.py` — deterministic rule-template XAI strings
+  for every Module 4D event type (no LLM required at runtime)
+- `apps/backend/app/services/event_service.py` — runs 4D detection, maps
+  results to `safety_events` rows, materializes a 30 s rolling clip, and
+  uploads MP4 objects to MinIO
+- `apps/backend/app/services/video_clip_buffer.py` — per-vehicle JPEG ring
+  buffer sized for 30 s @ 30 fps
+- `apps/backend/app/services/clip_encoder.py` — JPEG sequence → MP4 via
+  OpenCV when `opencv-python` is installed
+- `apps/backend/app/core/minio.py` — bucket ensure + `minio://` URL helper
+- `apps/backend/app/tasks/events.py` — Celery `post_process_event` retries
+  clip upload when MinIO was unavailable during the initial persist
+
+**Persistence flow**
+
+1. Stream JPEG frames into `append_frame(vehicle_id, bytes)` (rolling buffer).
+2. `detect_and_persist(...)` runs 4D, writes one `safety_events` row per
+   detection with `telemetry_snapshot` + `xai_explanation`.
+3. The last 30 s of buffered frames are encoded to MP4 and uploaded as
+   `{vehicle_id}/{event_id}.mp4` in the `safety-events` bucket.
+4. `video_clip_url` is stored as `minio://safety-events/...` on the row.
+
+Design decisions: Postgres persistence is required; clip upload degrades
+gracefully when MinIO or OpenCV is unavailable (rows still save without
+`video_clip_url`). REST ingestion endpoints remain Module 4F; 4E exposes the
+service layer and Celery retry hook only. Tests live in
+`ml/risk_engine/tests/test_explanations.py` and
+`apps/backend/tests/test_event_service.py`.
+
+#### Step 4.6 — Risk and safety event REST + Celery jobs (4F)
+
+Implemented in:
+
+- `apps/backend/app/models/risk_score.py` + Alembic `002_risk_scores` —
+  durable `risk_scores` history rows (score, level, full JSON payload)
+- `apps/backend/app/services/risk_service.py` — extended with
+  `persist_risk_score`, `list_risk_history`, and `evaluate_persist_and_publish`;
+  `evaluate_and_publish` now accepts `persist` and records history without
+  failing publish/cache
+- `apps/backend/app/api/v1/risk.py` — real 4F endpoints:
+  - `POST /api/v1/risk/{vehicle_id}/compute` — evaluate, cache, publish, persist
+  - `POST /api/v1/risk/{vehicle_id}/trigger` — Celery background evaluation
+  - `GET /api/v1/risk/history/{vehicle_id}` — Postgres time-series history
+  - `GET /api/v1/risk/current/{vehicle_id}` — unchanged Redis cache read
+- `apps/backend/app/api/v1/events.py` — real 4F endpoints:
+  - `POST /api/v1/events/{vehicle_id}/detect` — 4D detect + 4E persist
+  - `POST /api/v1/events/{vehicle_id}/trigger` — Celery background detect
+  - `POST /api/v1/events/{vehicle_id}/frame` — append JPEG to clip buffer
+  - `POST /api/v1/events/detail/{event_id}/acknowledge` — mark event acknowledged
+  - `GET /api/v1/events/{vehicle_id}` — filtered/paginated list with DB fallback
+  - `GET /api/v1/events/detail/{event_id}` — single event with XAI + clip URL
+  - `GET /api/v1/events/{vehicle_id}/export` — CSV export
+- `apps/backend/app/tasks/risk.py` — `run_risk_evaluation` Celery task
+- `apps/backend/app/tasks/events.py` — `detect_and_persist_events`,
+  `process_safety_tick` (risk + events in one job), and clip retry task
+
+Design decisions: Postgres/Redis/MinIO failures degrade independently — risk
+compute still returns even if history persistence fails; event list returns an
+empty list + warning when the DB is down. Combined `process_safety_tick` passes
+the computed risk score into event detection for richer telemetry snapshots.
+Tests live in `apps/backend/tests/test_events_api.py` with updates to
+`test_risk_api.py`.
+
+#### Step 4.7 — Live risk and safety events UI (4G)
+
+Implemented in the Next.js frontend at `/safety`:
+
+- `apps/frontend/src/hooks/useFleetRiskWebSocket.ts` — subscribes to
+  `/api/v1/fleet/ws/{org_id}` and surfaces live `risk_update` frames
+- `apps/frontend/src/components/safety/SafetyDashboard.tsx` — composite risk
+  gauge (reuses `RiskGauge`), reasons/overrides panel, persisted history chart,
+  JSON demo inputs for compute/detect, and event feed with acknowledge + MinIO
+  clip links
+- `apps/frontend/src/lib/api.ts` — typed clients for 4F risk/events endpoints
+- `apps/frontend/src/lib/types.ts` — `RiskScore`, `SafetyEvent`, and WebSocket
+  message contracts
+- `apps/frontend/src/app/safety/page.tsx` — Module 4G route
+
+UI capabilities:
+
+| Area | Behavior |
+|---|---|
+| Live risk | WebSocket updates + `GET /risk/current` fallback |
+| History | Line chart from `GET /risk/history/{vehicle_id}` |
+| Demo actions | `POST /risk/.../compute` and `POST /events/.../detect` |
+| Event feed | `GET /events/{vehicle_id}` with acknowledge via `POST /events/detail/{id}/acknowledge` |
+| Clips | `minio://` URLs linked to MinIO console browse path |
+
+Navigation links added from home, dashboard, monitor, road, and maintenance
+pages. Phase 4 (Modules 4A–4G) is now complete end-to-end.
 
 ---
 

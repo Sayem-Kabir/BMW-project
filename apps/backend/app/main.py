@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 
 from fastapi import FastAPI
@@ -29,9 +30,16 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down...")
     try:
         await close_redis()
+    except asyncio.CancelledError:
+        logger.info("Shutdown interrupted while closing Redis")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Redis shutdown error: %s", exc)
-    await engine.dispose()
+    try:
+        await engine.dispose()
+    except asyncio.CancelledError:
+        logger.info("Shutdown interrupted while closing database pool")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Database shutdown error: %s", exc)
 
 
 app = FastAPI(
@@ -46,7 +54,12 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:3003",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:3002",
+        "http://127.0.0.1:3003",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -78,6 +91,12 @@ async def health_check():
         payload["inference_device"] = get_inference_device()
     except Exception:  # noqa: BLE001
         payload["inference_device"] = "unknown"
+    try:
+        from app.core import redis as redis_ops
+
+        payload["redis"] = "ok" if await redis_ops.ping_redis() else "unavailable"
+    except Exception:  # noqa: BLE001
+        payload["redis"] = "unavailable"
     return payload
 
 

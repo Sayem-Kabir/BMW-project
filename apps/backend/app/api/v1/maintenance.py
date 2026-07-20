@@ -110,19 +110,26 @@ async def maintenance_history(
 ):
     """Recent persisted predictions for one vehicle, newest first."""
     limit = max(1, min(int(limit), 500))
-    result = await session.execute(
-        select(MaintenancePrediction)
-        .where(MaintenancePrediction.vehicle_id == vehicle_id)
-        .order_by(MaintenancePrediction.created_at.desc())
-        .limit(limit)
-    )
-    rows = result.scalars().all()
+    warning: str | None = None
+    rows: list[MaintenancePrediction] = []
+    try:
+        result = await session.execute(
+            select(MaintenancePrediction)
+            .where(MaintenancePrediction.vehicle_id == vehicle_id)
+            .order_by(MaintenancePrediction.created_at.desc())
+            .limit(limit)
+        )
+        rows = list(result.scalars().all())
+    except Exception:  # noqa: BLE001 — DB optional: live inference still works
+        logger.exception("Maintenance history query failed")
+        warning = "Database unavailable — no persisted history"
     return {
         "vehicle_id": str(vehicle_id),
         "history": [
             MaintenancePredictionResponse.model_validate(row).model_dump(mode="json")
             for row in rows
         ],
+        "warning": warning,
         "phase": "3H",
     }
 
@@ -133,21 +140,27 @@ async def list_predictions(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Latest persisted prediction per component."""
-    result = await session.execute(
-        select(MaintenancePrediction)
-        .where(MaintenancePrediction.vehicle_id == vehicle_id)
-        .order_by(MaintenancePrediction.created_at.desc())
-        .limit(50)
-    )
+    warning: str | None = None
     latest: dict[str, MaintenancePrediction] = {}
-    for row in result.scalars().all():
-        latest.setdefault(row.component, row)
+    try:
+        result = await session.execute(
+            select(MaintenancePrediction)
+            .where(MaintenancePrediction.vehicle_id == vehicle_id)
+            .order_by(MaintenancePrediction.created_at.desc())
+            .limit(50)
+        )
+        for row in result.scalars().all():
+            latest.setdefault(row.component, row)
+    except Exception:  # noqa: BLE001 — DB optional: live inference still works
+        logger.exception("Maintenance latest-predictions query failed")
+        warning = "Database unavailable — no persisted predictions"
     return {
         "vehicle_id": str(vehicle_id),
         "predictions": [
             MaintenancePredictionResponse.model_validate(row).model_dump(mode="json")
             for row in latest.values()
         ],
+        "warning": warning,
         "phase": "3H",
     }
 

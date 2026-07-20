@@ -31,3 +31,4 @@ class Vehicle(Base):
     sessions = relationship("DriverSession", back_populates="vehicle")
     safety_events = relationship("SafetyEvent", back_populates="vehicle")
     maintenance_predictions = relationship("MaintenancePrediction", back_populates="vehicle")
+    risk_scores = relationship("RiskScoreRecord", back_populates="vehicle")

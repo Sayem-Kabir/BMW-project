@@ -25,6 +25,12 @@ export default function MaintenancePage() {
             <Link href="/dashboard" className="text-slate-400 hover:text-white">
               Dashboard
             </Link>
+            <Link href="/safety" className="text-slate-400 hover:text-white">
+              Safety
+            </Link>
+            <Link href="/assistant" className="text-slate-400 hover:text-white">
+              Assistant
+            </Link>
             <a
               href="http://localhost:8000/docs"
               target="_blank"

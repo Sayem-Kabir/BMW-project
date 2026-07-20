@@ -1,0 +1,12 @@
+# Phase 5A/5B/5C — RAG knowledge base + retrieval + Ollama assistant
+sentence-transformers==3.0.0
+transformers>=4.41.0
+torch>=2.3.0
+pypdf==4.3.1
+numpy>=1.24.0
+chromadb==0.5.0; platform_system != "Windows"
+# Optional (spec names); agent works via Ollama HTTP without these:
+# langchain==0.2.0
+# langgraph==0.1.0
+# langchain-community==0.0.24
+

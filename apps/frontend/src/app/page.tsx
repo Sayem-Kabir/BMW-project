@@ -11,7 +11,7 @@ export default function Home() {
           BMW AI Automotive Intelligence Platform
         </h1>
         <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
-          Real-time Driver Monitoring • Road Understanding • Predictive Maintenance
+          Real-time Driver Monitoring • Road Understanding • Predictive Maintenance • Risk & Events • AI Assistant
         </p>
         <div className="space-x-4">
           <Link
@@ -37,6 +37,18 @@ export default function Home() {
             className="inline-block px-8 py-3 bg-violet-700 border-2 border-violet-300 text-white font-bold rounded-lg hover:bg-violet-600"
           >
             Maintenance
+          </Link>
+          <Link
+            href="/safety"
+            className="inline-block px-8 py-3 bg-orange-700 border-2 border-orange-300 text-white font-bold rounded-lg hover:bg-orange-600"
+          >
+            Risk & Events
+          </Link>
+          <Link
+            href="/assistant"
+            className="inline-block px-8 py-3 bg-sky-700 border-2 border-sky-300 text-white font-bold rounded-lg hover:bg-sky-600"
+          >
+            AI Assistant
           </Link>
           <a
             href="http://localhost:8000/docs"

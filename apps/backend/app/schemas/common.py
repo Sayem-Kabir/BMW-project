@@ -54,8 +54,69 @@ class RiskScoreResponse(BaseModel):
     score: int = Field(ge=0, le=100)
     level: str
     factors: list[dict[str, Any]] = []
+    reasons: list[str] = []
+    overrides: list[dict[str, Any]] = []
+    base_score: float | None = None
+    base_level: str | None = None
     timestamp: datetime
+    method: str | None = None
+    phase: str = "4F"
+    message: str | None = None
 
+
+class RiskComputeRequest(BaseModel):
+    """Driver/road/telemetry inputs for one Module 4F evaluation."""
+
+    driver_state: dict[str, Any] = Field(default_factory=dict)
+    road_state: dict[str, Any] = Field(default_factory=dict)
+    telemetry: dict[str, Any] = Field(default_factory=dict)
+    publish: bool = True
+    cache: bool = True
+    persist: bool = True
+
+
+class RiskComputeResponse(BaseModel):
+    vehicle_id: UUID
+    score: float
+    level: str
+    risk_score: float
+    risk_level: str
+    base_score: float
+    base_level: str
+    factors: list[dict[str, Any]] = []
+    overrides: list[dict[str, Any]] = []
+    reasons: list[str] = []
+    timestamp: datetime
+    method: str
+    published: bool = False
+    receivers: int = 0
+    cached: bool = False
+    persisted: bool = False
+    record_id: UUID | None = None
+    warning: str | None = None
+    persist_warning: str | None = None
+    phase: str = "4F"
+
+
+class RiskHistoryItem(BaseModel):
+    id: UUID
+    vehicle_id: UUID
+    score: float
+    level: str
+    timestamp: datetime
+    factors: list[dict[str, Any]] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+    overrides: list[dict[str, Any]] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class RiskHistoryResponse(BaseModel):
+    vehicle_id: UUID
+    history: list[RiskHistoryItem] = Field(default_factory=list)
+    count: int = 0
+    phase: str = "4F"
+    warning: str | None = None
 
 class RoadObject(BaseModel):
     id: str
@@ -237,6 +298,7 @@ class SafetyEventResponse(BaseModel):
     id: UUID
     vehicle_id: UUID
     driver_id: UUID
+    session_id: UUID | None = None
     event_type: str
     severity: str
     timestamp: datetime
@@ -246,14 +308,113 @@ class SafetyEventResponse(BaseModel):
     video_clip_url: str | None = None
     xai_explanation: str | None = None
     acknowledged: bool = False
+    acknowledged_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class EventDetectRequest(BaseModel):
+    driver_id: UUID
+    session_id: UUID | None = None
+    driver_state: dict[str, Any] = Field(default_factory=dict)
+    road_state: dict[str, Any] = Field(default_factory=dict)
+    telemetry: dict[str, Any] = Field(default_factory=dict)
+    risk_score: float | None = None
+    attach_clips: bool = True
+    enqueue_clip_retry: bool = False
+
+
+class EventSummary(BaseModel):
+    id: UUID
+    event_type: str
+    severity: str
+    timestamp: datetime
+    video_clip_url: str | None = None
+    xai_explanation: str | None = None
+
+
+class EventDetectResponse(BaseModel):
+    vehicle_id: UUID
+    driver_id: UUID
+    session_id: UUID | None = None
+    detected: int = 0
+    persisted: int = 0
+    events: list[EventSummary] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    skipped_detectors: list[str] = Field(default_factory=list)
+    completed_at: datetime
+    phase: str = "4F"
+
+
+class EventAcknowledgeRequest(BaseModel):
+    driver_id: UUID | None = None
+
+
+class EventListResponse(BaseModel):
+    vehicle_id: UUID
+    events: list[SafetyEventResponse] = Field(default_factory=list)
+    count: int = 0
+    phase: str = "4F"
+    warning: str | None = None
 
 
 class ChatRequest(BaseModel):
     message: str
     vehicle_id: UUID | None = None
+    driver_id: UUID | None = None
     conversation_id: UUID | None = None
+    stream: bool = True
+    persist: bool = True
+
+
+class ChatCitation(BaseModel):
+    source: str
+
+
+class ChatResponse(BaseModel):
+    conversation_id: UUID | None = None
+    vehicle_id: UUID | None = None
+    message: str
+    reply: str
+    intent: str
+    route: str
+    citations: list[str] = Field(default_factory=list)
+    obd_matches: list[dict[str, Any]] = Field(default_factory=list)
+    telemetry_context: str | None = None
+    maintenance_context: str | None = None
+    conversation_memory: str | None = None
+    memory_message_count: int = 0
+    llm_backend: str | None = None
+    llm_model: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    phase: str = "5G"
+
+
+class ConversationSummary(BaseModel):
+    id: UUID
+    vehicle_id: UUID | None = None
+    driver_id: UUID | None = None
+    started_at: datetime
+    message_count: int = 0
+    last_user_message: str | None = None
+    last_assistant_message: str | None = None
+
+
+class ConversationListResponse(BaseModel):
+    vehicle_id: UUID
+    conversations: list[ConversationSummary] = Field(default_factory=list)
+    count: int = 0
+    phase: str = "5G"
+    warning: str | None = None
+
+
+class ConversationDetailResponse(BaseModel):
+    id: UUID
+    vehicle_id: UUID | None = None
+    driver_id: UUID | None = None
+    started_at: datetime
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    phase: str = "5G"
 
 
 class FleetOverviewResponse(BaseModel):

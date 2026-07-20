@@ -29,6 +29,18 @@ export default function DashboardPage() {
           >
             Predictive maintenance
           </Link>
+          <Link
+            href="/safety"
+            className="rounded-lg bg-orange-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-600"
+          >
+            Risk & events
+          </Link>
+          <Link
+            href="/assistant"
+            className="rounded-lg bg-sky-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-600"
+          >
+            AI assistant
+          </Link>
         </div>
       </div>
       <div className="grid gap-4 md:grid-cols-3">

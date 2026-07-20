@@ -75,6 +75,7 @@ mlruns/
 
 # ChromaDB
 chroma_data/
+chroma_db/
 
 # MinIO
 minio_data/
