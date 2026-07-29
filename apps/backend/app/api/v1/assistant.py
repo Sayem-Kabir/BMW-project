@@ -11,7 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.access import FEATURE_ASSISTANT, require_feature
 from app.core.database import get_async_session
+from app.models.user import User
 from app.schemas.common import (
     ChatRequest,
     ChatResponse,
@@ -54,6 +56,7 @@ def _to_chat_response(payload: dict) -> ChatResponse:
 async def chat(
     body: ChatRequest,
     session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(require_feature(FEATURE_ASSISTANT)),
 ):
     """Chat with the Module 5C assistant.
 
@@ -127,6 +130,7 @@ async def conversations(
     vehicle_id: UUID,
     session: AsyncSession = Depends(get_async_session),
     limit: int = Query(20, ge=1, le=100),
+    _user: User = Depends(require_feature(FEATURE_ASSISTANT)),
 ):
     """List recent assistant conversations for one vehicle."""
     warning: str | None = None
@@ -173,6 +177,7 @@ async def conversations(
 async def conversation_detail(
     conversation_id: UUID,
     session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(require_feature(FEATURE_ASSISTANT)),
 ):
     """Return one conversation with full message history."""
     try:

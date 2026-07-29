@@ -5,6 +5,88 @@ export interface FleetOverview {
   active_alerts: number;
   average_risk: number;
   online_vehicles: number;
+  risk_distribution?: Record<string, number>;
+  phase?: string;
+}
+
+export interface FleetVehicleCard {
+  id: string;
+  name: string;
+  vin?: string | null;
+  model?: string | null;
+  year?: number | null;
+  fuel_type?: string | null;
+  org_id?: string | null;
+  is_active: boolean;
+  risk_score: number;
+  risk_level: RiskLevel | string;
+  status: "operational" | "maintenance" | "critical" | string;
+  active_alerts: number;
+  worst_health?: number | null;
+  latitude: number;
+  longitude: number;
+  phase?: string;
+}
+
+export interface FleetAlert {
+  id: string;
+  vehicle_id: string;
+  driver_id?: string;
+  event_type: string;
+  severity: string;
+  timestamp?: string | null;
+  video_clip_url?: string | null;
+  xai_explanation?: string | null;
+  acknowledged?: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  driver_id: string;
+  name: string;
+  email?: string;
+  safety_score: number;
+  risk_tier: "green" | "amber" | "red" | string;
+  sparkline: number[];
+  event_count_7d: number;
+}
+
+export interface IncidentWeek {
+  week_start: string;
+  total: number;
+  CRITICAL: number;
+  HIGH: number;
+  MEDIUM: number;
+  LOW: number;
+}
+
+export interface XAIExplainResponse {
+  explanation: string;
+  method: string;
+  heatmap_url?: string | null;
+  ig_heatmap_url?: string | null;
+  shap_values?: Record<string, unknown> | null;
+  rule_trace?: Record<string, unknown> | null;
+  activation_mass?: number | null;
+  attribution?: string | null;
+  phase: string;
+}
+
+export interface TelemetryHistoryResponse {
+  vehicle_id: string;
+  points: Array<{
+    time: string;
+    speed_kmh?: number | null;
+    rpm?: number | null;
+    battery_soc_pct?: number | null;
+    tire_rl?: number | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  }>;
+  phase?: string;
+  source?: string;
 }
 
 export interface Vehicle {
@@ -45,6 +127,27 @@ export interface DriverAnalysis {
   xai_heatmap_url?: string | null;
   phase?: string;
   message?: string;
+}
+
+/** Module 02 — cabin occupancy from POST /api/v1/cabin/analysis */
+export interface CabinOccupancy {
+  total_occupants: number;
+  driver_present: boolean;
+  front_passenger: boolean;
+  rear_passengers: number;
+  child_detected: boolean;
+  child_alert: boolean;
+  unattended_vehicle: boolean;
+  occupant_map: Record<string, boolean>;
+  persons: Array<{
+    confidence: number;
+    bbox: number[];
+    seat_zone?: string | null;
+    is_child: boolean;
+  }>;
+  model_loaded: boolean;
+  message?: string | null;
+  phase?: string;
 }
 
 export interface RoadObject {
@@ -349,13 +452,21 @@ export interface EventDetectResponse {
 }
 
 export interface FleetRiskWebSocketMessage {
-  type: "connected" | "risk_update" | "pong" | "error";
-  data?: RiskScore;
+  type:
+    | "connected"
+    | "risk_update"
+    | "safety_event"
+    | "maintenance_alert"
+    | "pong"
+    | "error";
+  data?: RiskScore & Record<string, unknown>;
   channel?: string;
   org_id?: string;
   phase?: string;
   message?: string;
+  detail?: string;
   timestamp?: string;
+  patterns?: string[];
 }
 
 export interface ChatResponse {

@@ -9,7 +9,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.access import FEATURE_SAFETY, require_feature
 from app.core.database import get_async_session
+from app.models.user import User
 from app.schemas.common import (
     RiskComputeRequest,
     RiskComputeResponse,
@@ -69,6 +71,7 @@ def _history_item(row: object) -> RiskHistoryItem:
 async def current_risk(
     vehicle_id: UUID,
     session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(require_feature(FEATURE_SAFETY)),
 ):
     """Return the latest cached risk score for one vehicle."""
     cached = await risk_service.get_cached_risk(vehicle_id, session=session)
@@ -171,6 +174,7 @@ async def risk_history(
     vehicle_id: UUID,
     session: AsyncSession = Depends(get_async_session),
     limit: int = 100,
+    _user: User = Depends(require_feature(FEATURE_SAFETY)),
 ):
     """Return persisted risk score history for one vehicle."""
     limit = max(1, min(int(limit), 500))

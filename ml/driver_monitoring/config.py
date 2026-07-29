@@ -24,7 +24,14 @@ YOLO_DRIVER_MODEL_PATH = MODELS_DIR / "driver_monitor_best.pt"
 # ── EAR / MAR (Module 1B) ───────────────────────────────────────────
 EAR_THRESHOLD = 0.25  # below → eyes closing / drowsy
 MAR_THRESHOLD = 0.60  # above → yawning
-DROWSY_FRAME_COUNT = 30  # consecutive frames before drowsy alert (~1s @ 30fps)
+# Drowsy if EAR says so for this many consecutive frames before alert (~1s @ 30fps)
+DROWSY_FRAME_COUNT = 30
+
+# Spec Phase 13 — adaptive sampling / face gate (pipeline-level)
+FRAME_SAMPLE_EVERY = 3  # full MediaPipe+YOLO every N frames; reuse last otherwise
+FACE_GATE_ENABLED = True  # skip mesh/landmarks when cheap presence check fails
+FACE_GATE_MIN_PIXELS = 1.0  # luminance variance; empty/cabin-blank frames ≈ 0
+
 
 # Dlib 68-point landmark indices
 LEFT_EYE_IDX = list(range(36, 42))

@@ -30,6 +30,46 @@ class ShapExplanation:
         return result
 
 
+def shap_plot_base64_from_top_features(
+    top_features: Sequence[Mapping[str, Any]] | Sequence[FeatureContribution],
+) -> str | None:
+    """Optional matplotlib bar plot as base64 PNG for dashboard XAI panels."""
+    try:
+        import base64
+        import io
+
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:  # noqa: BLE001
+        return None
+
+    names: list[str] = []
+    values: list[float] = []
+    for item in top_features:
+        if isinstance(item, FeatureContribution):
+            names.append(item.feature)
+            values.append(float(item.contribution))
+        else:
+            names.append(str(item.get("feature") or item.get("name") or "?"))
+            values.append(float(item.get("contribution", item.get("impact", 0.0))))
+    if not names:
+        return None
+
+    fig, ax = plt.subplots(figsize=(8, 3.2))
+    colors = ["#ef4444" if v > 0 else "#22c55e" for v in values]
+    ax.barh(names[::-1], values[::-1], color=colors[::-1])
+    ax.set_xlabel("SHAP contribution")
+    ax.set_title("Top feature contributions")
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=120)
+    plt.close(fig)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("ascii")
+
+
 class TreeShapExplainer:
     """Return top local XGBoost contributions in raw-margin units."""
 

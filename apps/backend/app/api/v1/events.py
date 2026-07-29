@@ -11,8 +11,13 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel, Field
+
+from app.core.access import FEATURE_SAFETY, require_feature
 from app.core.database import get_async_session
+from app.core.security import require_user_for_writes
 from app.models.event import SafetyEvent
+from app.models.user import User
 from app.schemas.common import (
     EventAcknowledgeRequest,
     EventDetectRequest,
@@ -27,6 +32,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/events", tags=["Safety Events"])
 PHASE = "4F"
+
+
+class EventFeedbackRequest(BaseModel):
+    label: str = Field(description="false_positive | true_positive | unsure")
+    note: str | None = None
 
 
 @router.post("/{vehicle_id}/detect", response_model=EventDetectResponse)
@@ -124,9 +134,9 @@ async def trigger_event_detection(vehicle_id: UUID, request: EventDetectRequest)
 @router.post("/{vehicle_id}/frame")
 async def append_event_frame(vehicle_id: UUID, file: UploadFile = File(...)):
     """Append one JPEG frame to the rolling 30 s clip buffer for a vehicle."""
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="frame file must not be empty")
+    from app.core.uploads import read_upload_bytes
+
+    data = await read_upload_bytes(file)
     event_service.append_frame(str(vehicle_id), data)
     return {
         "vehicle_id": str(vehicle_id),
@@ -136,7 +146,11 @@ async def append_event_frame(vehicle_id: UUID, file: UploadFile = File(...)):
 
 
 @router.get("/detail/{event_id}", response_model=SafetyEventResponse | None)
-async def event_detail(event_id: UUID, session: AsyncSession = Depends(get_async_session)):
+async def event_detail(
+    event_id: UUID,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(require_feature(FEATURE_SAFETY)),
+):
     try:
         result = await session.execute(
             select(SafetyEvent).where(SafetyEvent.id == event_id)
@@ -155,6 +169,8 @@ async def acknowledge_event(
     event_id: UUID,
     request: EventAcknowledgeRequest,
     session: AsyncSession = Depends(get_async_session),
+    user: User | None = Depends(require_user_for_writes),
+    _safety: User = Depends(require_feature(FEATURE_SAFETY)),
 ):
     try:
         row = await event_service.acknowledge_event(
@@ -170,6 +186,17 @@ async def acknowledge_event(
             status_code=503,
             detail="Safety events database unavailable",
         ) from None
+    if user is not None:
+        from app.services import auth_service
+
+        await auth_service.write_audit(
+            session,
+            action="EVENT_ACKNOWLEDGED",
+            user=user,
+            target_type="safety_events",
+            target_id=event_id,
+        )
+        await session.commit()
     return row
 
 
@@ -180,6 +207,7 @@ async def list_events(
     limit: int = 100,
     severity: str | None = None,
     acknowledged: bool | None = None,
+    _user: User = Depends(require_feature(FEATURE_SAFETY)),
 ):
     limit = max(1, min(int(limit), 500))
     warning: str | None = None
@@ -208,6 +236,91 @@ async def list_events(
         warning=warning,
         phase=PHASE,
     )
+
+
+@router.post("/detail/{event_id}/feedback")
+async def event_feedback(
+    event_id: UUID,
+    body: EventFeedbackRequest,
+    session: AsyncSession = Depends(get_async_session),
+    user: User | None = Depends(require_user_for_writes),
+    _safety: User = Depends(require_feature(FEATURE_SAFETY)),
+):
+    """Spec Phase 11C — flag false positive / true positive for retraining."""
+    label = body.label.strip().lower()
+    if label not in {"false_positive", "true_positive", "unsure"}:
+        raise HTTPException(
+            status_code=400,
+            detail="label must be false_positive, true_positive, or unsure",
+        )
+
+    result = await session.execute(select(SafetyEvent).where(SafetyEvent.id == event_id))
+    event = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    event.feedback_label = label
+    event.feedback_note = body.note
+    event.feedback_at = datetime.now(timezone.utc)
+    if user is not None:
+        from app.services import auth_service
+
+        await auth_service.write_audit(
+            session,
+            action="EVENT_FEEDBACK",
+            user=user,
+            target_type="safety_events",
+            target_id=event_id,
+            metadata={"label": label, "note": body.note},
+        )
+    await session.commit()
+    return {
+        "event_id": str(event_id),
+        "feedback_label": label,
+        "feedback_note": body.note,
+        "feedback_at": event.feedback_at.isoformat() if event.feedback_at else None,
+        "phase": "11C",
+    }
+
+
+@router.get("/feedback/export")
+async def export_feedback_retrain(
+    label: str | None = None,
+    limit: int = 500,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(require_feature(FEATURE_SAFETY)),
+):
+    """Export flagged events as CSV for retraining datasets (Phase 11C)."""
+    limit = max(1, min(int(limit), 5000))
+    query = (
+        select(SafetyEvent)
+        .where(SafetyEvent.feedback_label.is_not(None))
+        .order_by(SafetyEvent.feedback_at.desc())
+        .limit(limit)
+    )
+    if label:
+        query = query.where(SafetyEvent.feedback_label == label.strip().lower())
+    try:
+        rows = list((await session.execute(query)).scalars().all())
+    except Exception:  # noqa: BLE001
+        logger.exception("Feedback export failed")
+        raise HTTPException(
+            status_code=503,
+            detail="Safety events database unavailable",
+        ) from None
+
+    lines = [
+        "event_id,event_type,severity,feedback_label,feedback_note,feedback_at,vehicle_id"
+    ]
+    for event in rows:
+        note = (event.feedback_note or "").replace(",", ";").replace("\n", " ")
+        lines.append(
+            f"{event.id},{event.event_type},{event.severity},"
+            f"{event.feedback_label},{note},"
+            f"{event.feedback_at.isoformat() if event.feedback_at else ''},"
+            f"{event.vehicle_id}"
+        )
+    return PlainTextResponse("\n".join(lines), media_type="text/csv")
 
 
 @router.get("/{vehicle_id}/export")

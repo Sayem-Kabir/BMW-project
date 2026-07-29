@@ -169,16 +169,16 @@ def memory_injector_node(
 
 def build_prompt(state: AssistantState) -> str:
     manual = state.retrieved_context.strip() or "None"
-    telemetry = state.telemetry_context.strip() or "Live telemetry unavailable."
-    maintenance = state.maintenance_context.strip() or "Personalized maintenance history unavailable."
-    memory = state.conversation_memory.strip() or "No prior conversation turns."
+    telemetry = state.telemetry_context.strip() or "No live telemetry."
+    maintenance = state.maintenance_context.strip() or "No maintenance data."
+    memory = state.conversation_memory.strip() or ""
     citations = ", ".join(state.citations) if state.citations else "None"
-    return f"""You are an intelligent automotive assistant for a BMW vehicle.
+    return f"""You are a concise BMW vehicle assistant.
 You have access to the vehicle's owner manual, OBD references, live sensor data, predictive maintenance status, and prior conversation turns.
-Be helpful, precise, and safety-conscious. If the vehicle has a safety-critical issue, always recommend professional service.
-Prefer citing the provided sources. Do not invent diagnostic codes, pressures, or health scores.
-When maintenance scores are provided, use them to personalize service advice.
-Use prior conversation turns for continuity, but prioritize the latest driver question.
+Answer in 1-3 sentences maximum. Be direct and specific.
+Rules: Give the answer FIRST. No filler phrases like "I'm happy to help". No disclaimers unless safety-critical.
+Use the sensor data and maintenance scores below to give factual answers. Do not invent values.
+If asked about safety/driving, use the telemetry data to assess. If everything is normal, say so briefly.
 
 Intent: {state.intent}
 Citations: {citations}
@@ -220,8 +220,58 @@ def build_assistant_graph(
     use_demo_maintenance: bool = True,
     retrieve_kwargs: Mapping[str, Any] | None = None,
     prior_messages: Sequence[Mapping[str, Any]] | None = None,
+    multi_agent: bool = True,
 ):
-    """Return a simple compiled graph with ``.invoke(state_dict_or_state)``."""
+    """Return a compiled graph with supervisor routing (Spec Section 19.4)."""
+
+    def _run_specialist(state: AssistantState, agent: str) -> None:
+        """Specialist branches share RAG/memory then specialize context."""
+        state.warnings.append(f"supervisor→{agent}")
+        if agent == "safety":
+            # Prefer telemetry + risk-oriented retrieval
+            if should_inject_telemetry(state.intent, state.route) or True:
+                telemetry_injector_node(
+                    state,
+                    telemetry_fn=telemetry_fn,
+                    use_demo_telemetry=use_demo_telemetry,
+                )
+        elif agent == "maintenance":
+            maintenance_injector_node(
+                state,
+                maintenance_fn=maintenance_fn,
+                use_demo_maintenance=use_demo_maintenance,
+            )
+        elif agent == "route":
+            if should_inject_telemetry(state.intent, state.route) or True:
+                telemetry_injector_node(
+                    state,
+                    telemetry_fn=telemetry_fn,
+                    use_demo_telemetry=use_demo_telemetry,
+                )
+            state.warnings.append("route_agent:navigation_context")
+        else:
+            if should_inject_telemetry(state.intent, state.route):
+                telemetry_injector_node(
+                    state,
+                    telemetry_fn=telemetry_fn,
+                    use_demo_telemetry=use_demo_telemetry,
+                )
+            if should_inject_maintenance(state.intent, state.route):
+                maintenance_injector_node(
+                    state,
+                    maintenance_fn=maintenance_fn,
+                    use_demo_maintenance=use_demo_maintenance,
+                )
+
+    def _pick_agent(intent: str) -> str:
+        i = (intent or "").lower()
+        if any(k in i for k in ("maint", "oil", "brake", "tire", "battery", "service")):
+            return "maintenance"
+        if any(k in i for k in ("drowsy", "risk", "safety", "alert", "seatbelt", "phone")):
+            return "safety"
+        if any(k in i for k in ("route", "nav", "map", "destination", "traffic")):
+            return "route"
+        return "general"
 
     class _CompiledGraph:
         def invoke(self, payload: AssistantState | Mapping[str, Any]) -> AssistantState:
@@ -239,22 +289,42 @@ def build_assistant_graph(
             rag_retriever_node(state, retrieve_kwargs=retrieve_kwargs)
             memory_injector_node(state, prior_messages=prior_messages)
 
-            if should_inject_telemetry(state.intent, state.route):
-                telemetry_injector_node(
-                    state,
-                    telemetry_fn=telemetry_fn,
-                    use_demo_telemetry=use_demo_telemetry,
-                )
-            elif not state.telemetry_context:
-                state.telemetry_context = "Live telemetry not requested for this intent."
+            if multi_agent:
+                agent = _pick_agent(state.intent)
+                state.route = f"multi_agent:{agent}"
+                _run_specialist(state, agent)
+                # Always allow complementary context when empty
+                if not state.maintenance_context and agent != "maintenance":
+                    if should_inject_maintenance(state.intent, "rag"):
+                        maintenance_injector_node(
+                            state,
+                            maintenance_fn=maintenance_fn,
+                            use_demo_maintenance=use_demo_maintenance,
+                        )
+            else:
+                if should_inject_telemetry(state.intent, state.route):
+                    telemetry_injector_node(
+                        state,
+                        telemetry_fn=telemetry_fn,
+                        use_demo_telemetry=use_demo_telemetry,
+                    )
+                elif not state.telemetry_context:
+                    state.telemetry_context = "Live telemetry not requested for this intent."
 
-            if should_inject_maintenance(state.intent, state.route):
-                maintenance_injector_node(
-                    state,
-                    maintenance_fn=maintenance_fn,
-                    use_demo_maintenance=use_demo_maintenance,
-                )
-            elif not state.maintenance_context:
+                if should_inject_maintenance(state.intent, state.route):
+                    maintenance_injector_node(
+                        state,
+                        maintenance_fn=maintenance_fn,
+                        use_demo_maintenance=use_demo_maintenance,
+                    )
+                elif not state.maintenance_context:
+                    state.maintenance_context = (
+                        "Personalized maintenance history not requested for this intent."
+                    )
+
+            if not state.telemetry_context:
+                state.telemetry_context = "Live telemetry not requested for this intent."
+            if not state.maintenance_context:
                 state.maintenance_context = (
                     "Personalized maintenance history not requested for this intent."
                 )

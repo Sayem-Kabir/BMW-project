@@ -39,8 +39,9 @@ def test_drowsy_pedestrian_forces_critical_100() -> None:
         {"speed_kmh": 20.0},
     )
 
-    assert decision.base.score == 50.0
-    assert decision.base.level == "MEDIUM"
+    # Phase 13: CRITICAL override short-circuits before full 4A scoring
+    assert decision.method == "override_first_short_circuit_v1"
+    assert decision.base.method == "override_gate_v1"
     assert decision.score == 100.0
     assert decision.level == "CRITICAL"
     assert [item.rule_id for item in decision.overrides] == [
@@ -101,7 +102,7 @@ def test_phone_in_school_zone_forces_critical() -> None:
         {"school_zone": True},
     )
 
-    assert decision.base.score == 25.0
+    assert decision.method == "override_first_short_circuit_v1"
     assert decision.score == 100.0
     assert decision.level == "CRITICAL"
     assert decision.overrides[0].rule_id == "phone_in_school_zone"
@@ -146,8 +147,7 @@ def test_multiple_overrides_apply_in_order_without_downgrading() -> None:
         {"speed_kmh": 80.0, "school_zone": True},
     )
 
-    assert decision.base.score == 90.0
-    assert decision.base.level == "CRITICAL"
+    assert decision.method == "override_first_short_circuit_v1"
     assert decision.score == 100.0
     assert decision.level == "CRITICAL"
     assert [item.rule_id for item in decision.overrides] == [

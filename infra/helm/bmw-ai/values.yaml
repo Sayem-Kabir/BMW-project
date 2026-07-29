@@ -1,0 +1,20 @@
+replicaCount: 1
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilization: 70
+image:
+  backend: bmw-ai-backend:latest
+  frontend: bmw-ai-frontend:latest
+  postgres: timescale/timescaledb:latest-pg16
+service:
+  backendPort: 8000
+  frontendPort: 3000
+ingress:
+  host: bmw-ai.local
+env:
+  ENVIRONMENT: production
+  REQUIRE_AUTH_WRITES: "true"
+  publicApiUrl: "http://bmw-backend:8000"
+  postgresPassword: "bmwai_secret"

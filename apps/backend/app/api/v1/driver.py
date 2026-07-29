@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSock
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.core.uploads import read_upload_bytes
 from app.schemas.common import DriverAnalysisResponse, DriverSessionResponse, SafetyEventResponse
 from app.services import driver_service
 
@@ -28,7 +29,7 @@ async def analyze_frame(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Analyze a single JPEG/PNG frame via the Phase 1 monitoring pipeline."""
-    image_bytes = await file.read()
+    image_bytes = await read_upload_bytes(file)
     try:
         raw = await asyncio.to_thread(
             driver_service.analyze_frame_bytes,
@@ -36,6 +37,14 @@ async def analyze_frame(
             vehicle_id=vehicle_id,
             session_id=session_id,
         )
+        try:
+            from app.core.metrics_custom import observe_inference
+
+            ms = float(raw.get("inference_ms") or raw.get("latency_ms") or 0)
+            if ms > 0:
+                observe_inference("driver", ms / 1000.0)
+        except Exception:  # noqa: BLE001
+            pass
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001

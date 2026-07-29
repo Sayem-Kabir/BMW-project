@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 
+from ml.road_understanding.config import SEG_FULL_EVERY_N
 from ml.road_understanding.depth_estimator import (
     DepthMap,
     MiDaSDepthEstimator,
@@ -152,6 +153,8 @@ class RoadUnderstandingPipeline:
         self.options = options or RoadPipelineOptions()
         self._frame_index = 0
         self._lock = RLock()
+        self._last_segmentation = None
+        self._seg_full_every = max(1, int(SEG_FULL_EVERY_N))
 
     @property
     def frame_index(self) -> int:
@@ -165,6 +168,7 @@ class RoadUnderstandingPipeline:
             if hasattr(self.pedestrian_localizer, "reset"):
                 self.pedestrian_localizer.reset()
             self._frame_index = 0
+            self._last_segmentation = None
 
     def process_frame(
         self,
@@ -191,12 +195,24 @@ class RoadUnderstandingPipeline:
             result = RoadPipelineResult(frame_index=self._frame_index)
 
             if self.options.segmentation:
-                result.segmentation = self._timed(
-                    result,
-                    "segmentation",
-                    lambda: self.segmenter.segment(image, input_color=color),
-                    fallback=lambda message: RoadSegmentation(message=message),
+                do_full = (
+                    self._last_segmentation is None
+                    or (self._frame_index % self._seg_full_every) == 1
                 )
+                if do_full:
+                    result.segmentation = self._timed(
+                        result,
+                        "segmentation",
+                        lambda: self.segmenter.segment(image, input_color=color),
+                        fallback=lambda message: RoadSegmentation(message=message),
+                    )
+                    self._last_segmentation = result.segmentation
+                else:
+                    result.segmentation = self._last_segmentation
+                    result.stage_times_ms["segmentation"] = 0.0
+                    result.warnings.append(
+                        f"segmentation_reused_every_{self._seg_full_every}"
+                    )
             else:
                 result.segmentation.message = "Segmentation disabled"
 

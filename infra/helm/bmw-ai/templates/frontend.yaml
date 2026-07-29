@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bmw-frontend
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: bmw-frontend
+  template:
+    metadata:
+      labels:
+        app: bmw-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: {{ .Values.image.frontend }}
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: {{ .Values.env.publicApiUrl | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bmw-frontend
+spec:
+  selector:
+    app: bmw-frontend
+  ports:
+    - port: {{ .Values.service.frontendPort }}
+      targetPort: 3000

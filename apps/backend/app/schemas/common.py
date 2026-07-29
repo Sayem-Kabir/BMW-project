@@ -34,6 +34,30 @@ class DriverAnalysisResponse(BaseModel):
     message: str = "ok"
 
 
+class CabinPersonDetection(BaseModel):
+    confidence: float = 0.0
+    bbox: list[float] = Field(default_factory=list)
+    seat_zone: str | None = None
+    is_child: bool = False
+
+
+class CabinOccupancyResponse(BaseModel):
+    model_config = {"protected_namespaces": ()}
+
+    total_occupants: int = 0
+    driver_present: bool = False
+    front_passenger: bool = False
+    rear_passengers: int = 0
+    child_detected: bool = False
+    child_alert: bool = False
+    unattended_vehicle: bool = False
+    occupant_map: dict[str, bool] = Field(default_factory=dict)
+    persons: list[CabinPersonDetection] = Field(default_factory=list)
+    model_loaded: bool = False
+    message: str | None = None
+    phase: str = "02"
+
+
 class DriverSessionResponse(BaseModel):
     id: UUID
     vehicle_id: UUID
@@ -422,6 +446,7 @@ class FleetOverviewResponse(BaseModel):
     active_alerts: int = 0
     average_risk: float = 0.0
     online_vehicles: int = 0
+    phase: str = "6A"
 
 
 class TelemetrySnapshot(BaseModel):
@@ -438,11 +463,17 @@ class XAIExplainRequest(BaseModel):
     event_id: UUID | None = None
     event_type: str | None = None
     frame_id: str | None = None
+    component: str | None = None
+    vehicle_id: UUID | None = None
 
 
 class XAIExplainResponse(BaseModel):
     explanation: str
     method: str
     heatmap_url: str | None = None
+    ig_heatmap_url: str | None = None
     shap_values: dict[str, Any] | None = None
-    phase: str = "scaffold"
+    rule_trace: dict[str, Any] | None = None
+    activation_mass: float | None = None
+    attribution: str | None = None
+    phase: str = "6G"

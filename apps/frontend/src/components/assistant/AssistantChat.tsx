@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   chatAssistantStream,
@@ -40,7 +41,29 @@ const SUGGESTIONS = [
 ];
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "response" in error) {
+    const response = (error as { response?: { data?: unknown } }).response;
+    const data = response?.data;
+    if (data && typeof data === "object") {
+      const envelope = data as {
+        error?: { message?: string };
+        detail?: string;
+      };
+      if (envelope.error?.message) return envelope.error.message;
+      if (typeof envelope.detail === "string") return envelope.detail;
+    }
+  }
+  if (error instanceof Error) {
+    try {
+      const parsed = JSON.parse(error.message) as {
+        error?: { message?: string };
+      };
+      if (parsed.error?.message) return parsed.error.message;
+    } catch {
+      // not JSON
+    }
+    return error.message;
+  }
   return "Assistant request failed";
 }
 
@@ -63,7 +86,17 @@ function bubblesFromStoredMessages(
 
 export function AssistantChat() {
   const queryClient = useQueryClient();
-  const [vehicleId, setVehicleId] = useState(DEFAULT_VEHICLE_ID);
+  const searchParams = useSearchParams();
+  const vehicleFromQuery = searchParams.get("vehicle_id")?.trim();
+  const [vehicleId, setVehicleId] = useState(
+    vehicleFromQuery || DEFAULT_VEHICLE_ID
+  );
+
+  useEffect(() => {
+    if (vehicleFromQuery) {
+      setVehicleId(vehicleFromQuery);
+    }
+  }, [vehicleFromQuery]);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatBubble[]>([WELCOME]);
   const [conversationId, setConversationId] = useState<string | null>(null);

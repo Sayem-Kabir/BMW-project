@@ -30,6 +30,26 @@ services:
     networks:
       - bmw-network
 
+  # Spec Section 19.3 — optional event backbone (Redpanda / Kafka API)
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.4
+    container_name: bmw-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --overprovisioned
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    profiles:
+      - industry
+    networks:
+      - bmw-network
+
   chromadb:
     image: chromadb/chroma:latest
     container_name: bmw-chromadb
@@ -84,6 +104,10 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    gpus: all
     networks:
       - bmw-network
 
@@ -109,8 +133,13 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
     volumes:
       - grafana_data:/var/lib/grafana
+      # Mount providers separately — nested mount under :ro provisioning fails on Docker Desktop
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
     networks:
@@ -153,6 +182,7 @@ services:
   frontend:
     build: ../apps/frontend
     container_name: bmw-frontend
+    restart: unless-stopped
     ports:
       - "3000:3000"
     depends_on:
@@ -164,8 +194,8 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
       WATCHPACK_POLLING: "true"
-    # Dev mode: install into the named volume, then hot-reload
-    command: sh -c "pnpm install && pnpm dev -H 0.0.0.0 -p 3000"
+      CI: "true"
+    command: sh -c "exec pnpm dev -H 0.0.0.0 -p 3000"
     networks:
       - bmw-network
 

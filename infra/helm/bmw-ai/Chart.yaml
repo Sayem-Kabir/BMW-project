@@ -1,0 +1,7 @@
+# BMW AI Platform — Helm chart scaffold (Spec Section 19.5)
+apiVersion: v2
+name: bmw-ai
+description: BMW AI Automotive Intelligence Platform
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

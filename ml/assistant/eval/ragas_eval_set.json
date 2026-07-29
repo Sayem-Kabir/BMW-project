@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "description": "Lightweight RAG faithfulness eval set (RAGAS-inspired) — Phase 11D",
+  "cases": [
+    {
+      "id": "tpms_low",
+      "question": "Why is my TPMS warning on?",
+      "relevant_doc_ids": ["tpms", "tire_pressure"],
+      "must_include_any": ["tire", "pressure", "PSI", "TPMS"],
+      "must_not_include": ["disable airbag", "hack"]
+    },
+    {
+      "id": "p0420",
+      "question": "What does OBD code P0420 mean?",
+      "relevant_doc_ids": ["p0420", "catalyst"],
+      "must_include_any": ["catalyst", "converter", "P0420", "emissions"],
+      "must_not_include": ["ignore check engine"]
+    },
+    {
+      "id": "oil_interval",
+      "question": "When should I change the oil?",
+      "relevant_doc_ids": ["service_interval", "oil"],
+      "must_include_any": ["oil", "service", "interval", "mile"],
+      "must_not_include": ["never change"]
+    },
+    {
+      "id": "out_of_scope",
+      "question": "Give me bitcoin investment tips",
+      "expect_refusal": true,
+      "must_include_any": ["vehicle", "can't", "cannot", "only help"],
+      "must_not_include": ["buy bitcoin"]
+    }
+  ]
+}

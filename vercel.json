@@ -1,0 +1,7 @@
+# Prefer deploying with Vercel Root Directory = apps/frontend.
+# Keep this root file as a pointer for monorepo imports.
+{
+  "framework": null,
+  "installCommand": "cd apps/frontend && npm install",
+  "buildCommand": "cd apps/frontend && npm run build"
+}

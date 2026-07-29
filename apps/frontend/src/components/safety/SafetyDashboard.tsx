@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { RiskGauge } from "@/components/driver/RiskGauge";
+import { XaiPanel } from "@/components/fleet/XaiPanel";
 import { useFleetRiskWebSocket } from "@/hooks/useFleetRiskWebSocket";
 import {
   acknowledgeSafetyEvent,
@@ -40,172 +41,76 @@ const SEVERITY_CLASSES: Record<RiskLevel, string> = {
   CRITICAL: "border-red-500/40 bg-red-500/10 text-red-300",
 };
 
-const DEMO_DRIVER_STATE = `{
-  "is_drowsy": true,
-  "ear_value": 0.22,
-  "phone_detected": false,
-  "seatbelt_worn": false
-}`;
-
-const DEMO_ROAD_STATE = `{
-  "objects": [
-    {
-      "class": "car",
-      "distance_m": 9.8,
-      "relative_speed_kmh": 58,
-      "track_id": 1,
-      "confirmed": true
-    }
-  ]
-}`;
-
-const DEMO_TELEMETRY = `{
-  "speed_kmh": 58,
-  "latitude": 48.1351,
-  "longitude": 11.5820
-}`;
-
-type DemoScenario = {
+type Scenario = {
   id: string;
   label: string;
-  hint: string;
-  driverState: string;
-  roadState: string;
-  telemetry: string;
-  expectedEvents: string;
+  description: string;
+  icon: string;
+  driverState: Record<string, unknown>;
+  roadState: Record<string, unknown>;
+  telemetry: Record<string, unknown>;
+  expectedOutcome: string;
+  severity: "safe" | "warning" | "danger" | "critical";
 };
 
-const DEMO_SCENARIOS: DemoScenario[] = [
+const SCENARIOS: Scenario[] = [
   {
     id: "triple-critical",
-    label: "3 events — critical stack",
-    hint: "NEAR_COLLISION + DRIVER_ASLEEP + PEDESTRIAN_PROXIMITY_HAZARD",
-    driverState: `{
-  "consecutive_drowsy_frames": 65,
-  "ear_value": 0.18,
-  "phone_detected": false,
-  "seatbelt_worn": false
-}`,
-    roadState: `{
-  "objects": [
-    {
-      "class": "car",
-      "distance_m": 9.8,
-      "relative_speed_kmh": 58,
-      "track_id": 1,
-      "confirmed": true
-    },
-    {
-      "class": "pedestrian",
-      "distance_m": 8.0,
-      "relative_speed_kmh": 5.0,
-      "track_id": 2,
-      "temporally_confirmed": true
-    }
-  ]
-}`,
-    telemetry: `{
-  "speed_kmh": 72,
-  "latitude": 48.1351,
-  "longitude": 11.5820
-}`,
-    expectedEvents: "3 detected, 3 persisted",
+    label: "Critical Multi-Threat",
+    description: "Driver asleep + near collision + pedestrian nearby",
+    icon: "🚨",
+    severity: "critical",
+    driverState: { consecutive_drowsy_frames: 65, ear_value: 0.18, phone_detected: false, seatbelt_worn: false },
+    roadState: { objects: [{ class: "car", distance_m: 9.8, relative_speed_kmh: 58, track_id: 1, confirmed: true }, { class: "pedestrian", distance_m: 8.0, relative_speed_kmh: 5.0, track_id: 2, temporally_confirmed: true }] },
+    telemetry: { speed_kmh: 72, latitude: 48.1351, longitude: 11.582 },
+    expectedOutcome: "Expects 3 safety events",
   },
   {
     id: "unsafe-follow-ped",
-    label: "2 events — following + pedestrian",
-    hint: "UNSAFE_FOLLOWING_DISTANCE + PEDESTRIAN_PROXIMITY_HAZARD",
-    driverState: `{
-  "is_drowsy": false,
-  "phone_detected": false,
-  "seatbelt_worn": true
-}`,
-    roadState: `{
-  "objects": [
-    {
-      "class": "car",
-      "distance_m": 50.0,
-      "relative_speed_kmh": 60,
-      "track_id": 1,
-      "confirmed": true
-    },
-    {
-      "class": "pedestrian",
-      "distance_m": 10.0,
-      "relative_speed_kmh": 4.0,
-      "track_id": 2,
-      "temporally_confirmed": true
-    }
-  ]
-}`,
-    telemetry: `{
-  "speed_kmh": 72,
-  "latitude": 48.1351,
-  "longitude": 11.5820
-}`,
-    expectedEvents: "2 detected, 2 persisted",
+    label: "Tailgating + Pedestrian",
+    description: "Too close to car ahead, pedestrian on roadside",
+    icon: "⚠️",
+    severity: "danger",
+    driverState: { is_drowsy: false, phone_detected: false, seatbelt_worn: true },
+    roadState: { objects: [{ class: "car", distance_m: 50.0, relative_speed_kmh: 60, track_id: 1, confirmed: true }, { class: "pedestrian", distance_m: 10.0, relative_speed_kmh: 4.0, track_id: 2, temporally_confirmed: true }] },
+    telemetry: { speed_kmh: 72, latitude: 48.1351, longitude: 11.582 },
+    expectedOutcome: "Expects 2 safety events",
   },
   {
     id: "near-collision",
-    label: "1 event — near collision",
-    hint: "NEAR_COLLISION (TTC < 2s)",
-    driverState: DEMO_DRIVER_STATE,
-    roadState: DEMO_ROAD_STATE,
-    telemetry: DEMO_TELEMETRY,
-    expectedEvents: "1 detected, 1 persisted",
+    label: "Near Collision",
+    description: "Drowsy driver approaching vehicle rapidly",
+    icon: "💥",
+    severity: "warning",
+    driverState: { is_drowsy: true, ear_value: 0.22, phone_detected: false, seatbelt_worn: false },
+    roadState: { objects: [{ class: "car", distance_m: 9.8, relative_speed_kmh: 58, track_id: 1, confirmed: true }] },
+    telemetry: { speed_kmh: 58, latitude: 48.1351, longitude: 11.582 },
+    expectedOutcome: "Expects 1 safety event",
   },
   {
-    id: "no-events",
-    label: "0 events — why you saw zero",
-    hint: "is_drowsy alone does not fire DRIVER_ASLEEP (needs 60+ frames or road objects)",
-    driverState: `{
-  "is_drowsy": true,
-  "ear_value": 0.22,
-  "phone_detected": false
-}`,
-    roadState: `{}`,
-    telemetry: DEMO_TELEMETRY,
-    expectedEvents: "0 detected (intentional demo of empty result)",
+    id: "safe-drive",
+    label: "Safe Driving",
+    description: "Normal conditions, no threats detected",
+    icon: "✅",
+    severity: "safe",
+    driverState: { is_drowsy: false, phone_detected: false, seatbelt_worn: true },
+    roadState: {},
+    telemetry: { speed_kmh: 45, latitude: 48.1351, longitude: 11.582 },
+    expectedOutcome: "No events (safe)",
   },
 ];
 
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 function errorMessage(error: unknown): string {
-  if (
-    error &&
-    typeof error === "object" &&
-    "response" in error &&
-    error.response &&
-    typeof error.response === "object" &&
-    "data" in error.response
-  ) {
+  if (error && typeof error === "object" && "response" in error && error.response && typeof error.response === "object" && "data" in error.response) {
     const data = error.response.data as { detail?: unknown };
     if (data.detail) return String(data.detail);
   }
   return error instanceof Error ? error.message : "Request failed";
 }
 
-function parseJsonInput(raw: string, label: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error(`${label} must be a JSON object`);
-    }
-    return parsed as Record<string, unknown>;
-  } catch (err) {
-    throw new Error(
-      err instanceof Error ? err.message : `${label} JSON is invalid`
-    );
-  }
-}
-
 function SeverityBadge({ severity }: { severity: RiskLevel }) {
   return (
-    <span
-      className={`rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ${SEVERITY_CLASSES[severity]}`}
-    >
+    <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ${SEVERITY_CLASSES[severity]}`}>
       {severity}
     </span>
   );
@@ -213,24 +118,12 @@ function SeverityBadge({ severity }: { severity: RiskLevel }) {
 
 function formatTime(value: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function isPlaceholderRisk(payload: RiskScore | null | undefined): boolean {
   if (!payload) return true;
-  return (
-    payload.score <= 0 &&
-    payload.level === "LOW" &&
-    Boolean(payload.message?.toLowerCase().includes("no recent"))
-  );
+  return payload.score <= 0 && payload.level === "LOW" && Boolean(payload.message?.toLowerCase().includes("no recent"));
 }
 
 function normalizeRisk(payload: unknown): RiskScore {
@@ -244,10 +137,7 @@ function normalizeRisk(payload: unknown): RiskScore {
     factors: (data.factors as RiskScore["factors"]) ?? [],
     reasons: (data.reasons as string[]) ?? [],
     overrides: (data.overrides as RiskScore["overrides"]) ?? [],
-    base_score:
-      data.base_score === undefined || data.base_score === null
-        ? null
-        : Number(data.base_score),
+    base_score: data.base_score === undefined || data.base_score === null ? null : Number(data.base_score),
     base_level: (data.base_level as RiskLevel | null) ?? null,
     timestamp: String(data.timestamp ?? new Date().toISOString()),
     method: data.method ? String(data.method) : null,
@@ -256,116 +146,91 @@ function normalizeRisk(payload: unknown): RiskScore {
   };
 }
 
-function EventCard({
-  event,
-  driverId,
-  onAcknowledged,
-}: {
-  event: SafetyEvent;
-  driverId: string;
-  onAcknowledged: () => void;
-}) {
+function EventCard({ event, driverId, onAcknowledged }: { event: SafetyEvent; driverId: string; onAcknowledged: () => void }) {
   const clip = clipLink(event.video_clip_url);
   const acknowledge = useMutation({
     mutationFn: () => acknowledgeSafetyEvent(event.id, driverId),
     onSuccess: onAcknowledged,
   });
 
+  const typeLabel = event.event_type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
   return (
-    <article className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+    <article className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 transition-colors hover:border-slate-700">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-white">{event.event_type}</h3>
+            <h3 className="font-semibold text-white">{typeLabel}</h3>
             <SeverityBadge severity={event.severity} />
-            {event.acknowledged ? (
-              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
-                Acknowledged
-              </span>
-            ) : null}
+            {event.acknowledged && (
+              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-300">✓ Acknowledged</span>
+            )}
           </div>
           <p className="mt-1 text-xs text-slate-500">{formatTime(event.timestamp)}</p>
         </div>
-        {!event.acknowledged ? (
+        {!event.acknowledged && (
           <button
             type="button"
             onClick={() => acknowledge.mutate()}
             disabled={acknowledge.isPending}
-            className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
           >
-            {acknowledge.isPending ? "Saving…" : "Acknowledge"}
+            {acknowledge.isPending ? "Saving…" : "✓ Acknowledge"}
           </button>
-        ) : null}
-      </div>
-
-      {event.xai_explanation ? (
-        <p className="mt-3 text-sm leading-relaxed text-slate-300">
-          {event.xai_explanation}
-        </p>
-      ) : null}
-
-      <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-400">
-        {event.telemetry_snapshot?.speed_kmh !== undefined ? (
-          <span>Speed: {String(event.telemetry_snapshot.speed_kmh)} km/h</span>
-        ) : null}
-        {event.telemetry_snapshot?.ttc_seconds !== undefined ? (
-          <span>TTC: {String(event.telemetry_snapshot.ttc_seconds)} s</span>
-        ) : null}
-        {event.telemetry_snapshot?.risk_score_at_event !== undefined ? (
-          <span>
-            Risk at event: {String(event.telemetry_snapshot.risk_score_at_event)}
-          </span>
-        ) : null}
-      </div>
-
-      <div className="mt-3">
-        {clip.href ? (
-          <a
-            href={clip.href}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm text-blue-300 underline-offset-2 hover:underline"
-          >
-            Open video clip
-          </a>
-        ) : (
-          <span className="text-sm text-slate-500">{clip.label}</span>
         )}
       </div>
+
+      {event.xai_explanation && (
+        <p className="mt-3 rounded-lg bg-slate-800/50 p-3 text-sm leading-relaxed text-slate-300">
+          💡 {event.xai_explanation}
+        </p>
+      )}
+
+      <XaiPanel eventId={event.id} eventType={event.event_type} className="mt-3" autoLabel="View detailed explanation" />
+
+      <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-400">
+        {event.telemetry_snapshot?.speed_kmh !== undefined && (
+          <span className="rounded bg-slate-800 px-2 py-0.5">🏎️ {String(event.telemetry_snapshot.speed_kmh)} km/h</span>
+        )}
+        {event.telemetry_snapshot?.ttc_seconds !== undefined && (
+          <span className="rounded bg-slate-800 px-2 py-0.5">⏱️ TTC {String(event.telemetry_snapshot.ttc_seconds)}s</span>
+        )}
+        {event.telemetry_snapshot?.risk_score_at_event !== undefined && (
+          <span className="rounded bg-slate-800 px-2 py-0.5">📊 Risk {String(event.telemetry_snapshot.risk_score_at_event)}</span>
+        )}
+      </div>
+
+      {clip.href ? (
+        <a href={clip.href} target="_blank" rel="noreferrer" className="mt-3 inline-block rounded-lg bg-blue-500/10 px-3 py-1.5 text-sm text-blue-300 hover:bg-blue-500/20">
+          🎬 Watch clip
+        </a>
+      ) : (
+        <span className="mt-3 inline-block text-sm text-slate-500">{clip.label}</span>
+      )}
     </article>
   );
 }
 
+const SEVERITY_COLORS = { safe: "border-emerald-500/50 bg-emerald-500/10", warning: "border-amber-500/50 bg-amber-500/10", danger: "border-orange-500/50 bg-orange-500/10", critical: "border-red-500/50 bg-red-500/10" };
+const SEVERITY_RING = { safe: "ring-emerald-500/30", warning: "ring-amber-500/30", danger: "ring-orange-500/30", critical: "ring-red-500/30" };
+
 export function SafetyDashboard() {
   const queryClient = useQueryClient();
-  const [vehicleId, setVehicleId] = useState(DEFAULT_VEHICLE_ID);
-  const [driverId, setDriverId] = useState(DEFAULT_DRIVER_ID);
-  const [sessionId, setSessionId] = useState(DEFAULT_SESSION_ID);
-  const [orgId, setOrgId] = useState(DEFAULT_ORG_ID);
-  const [driverStateJson, setDriverStateJson] = useState(DEMO_DRIVER_STATE);
-  const [roadStateJson, setRoadStateJson] = useState(DEMO_ROAD_STATE);
-  const [telemetryJson, setTelemetryJson] = useState(DEMO_TELEMETRY);
-  const [activeScenario, setActiveScenario] = useState("near-collision");
+  const vehicleId = DEFAULT_VEHICLE_ID;
+  const driverId = DEFAULT_DRIVER_ID;
+  const sessionId = DEFAULT_SESSION_ID;
+  const orgId = DEFAULT_ORG_ID;
+
+  const [selectedScenario, setSelectedScenario] = useState<Scenario>(SCENARIOS[2]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [manualRisk, setManualRisk] = useState<RiskScore | null>(null);
-
-  const applyScenario = (scenarioId: string) => {
-    const scenario = DEMO_SCENARIOS.find((item) => item.id === scenarioId);
-    if (!scenario) return;
-    setActiveScenario(scenario.id);
-    setDriverStateJson(scenario.driverState);
-    setRoadStateJson(scenario.roadState);
-    setTelemetryJson(scenario.telemetry);
-    setActionError(null);
-  };
-  const vehicleValid = UUID_PATTERN.test(vehicleId.trim());
-  const driverValid = UUID_PATTERN.test(driverId.trim());
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const { status: wsStatus, error: wsError, liveRisk } = useFleetRiskWebSocket({
-    orgId: orgId.trim() || DEFAULT_ORG_ID,
-    enabled: Boolean(orgId.trim()),
+    orgId,
+    enabled: true,
     onRiskUpdate: (payload) => {
-      if (payload.vehicle_id === vehicleId.trim()) {
+      if (payload.vehicle_id === vehicleId) {
         queryClient.invalidateQueries({ queryKey: ["risk-history", vehicleId] });
       }
     },
@@ -373,71 +238,44 @@ export function SafetyDashboard() {
 
   const currentRiskQuery = useQuery({
     queryKey: ["risk-current", vehicleId],
-    queryFn: () => getCurrentRisk(vehicleId.trim()),
-    enabled: vehicleValid,
+    queryFn: () => getCurrentRisk(vehicleId),
     refetchInterval: 5_000,
   });
 
   const historyQuery = useQuery({
     queryKey: ["risk-history", vehicleId],
-    queryFn: () => getRiskHistory(vehicleId.trim(), 40),
-    enabled: vehicleValid,
+    queryFn: () => getRiskHistory(vehicleId, 40),
   });
 
   const eventsQuery = useQuery({
     queryKey: ["safety-events", vehicleId],
-    queryFn: () => getSafetyEvents(vehicleId.trim(), { limit: 50 }),
-    enabled: vehicleValid,
+    queryFn: () => getSafetyEvents(vehicleId, { limit: 50 }),
     refetchInterval: 15_000,
   });
 
   const displayedRisk = useMemo(() => {
-    const liveForVehicle =
-      liveRisk && liveRisk.vehicle_id === vehicleId.trim() ? liveRisk : null;
+    const liveForVehicle = liveRisk && liveRisk.vehicle_id === vehicleId ? liveRisk : null;
     if (liveForVehicle) return liveForVehicle;
     if (manualRisk) return manualRisk;
-
-    const currentFromApi = currentRiskQuery.data
-      ? normalizeRisk(currentRiskQuery.data)
-      : null;
-    if (currentFromApi && !isPlaceholderRisk(currentFromApi)) {
-      return currentFromApi;
-    }
-
+    const currentFromApi = currentRiskQuery.data ? normalizeRisk(currentRiskQuery.data) : null;
+    if (currentFromApi && !isPlaceholderRisk(currentFromApi)) return currentFromApi;
     const latestHistory = historyQuery.data?.history?.[0];
-    if (latestHistory) {
-      return normalizeRisk({
-        ...latestHistory,
-        vehicle_id: vehicleId.trim(),
-      });
-    }
-
+    if (latestHistory) return normalizeRisk({ ...latestHistory, vehicle_id: vehicleId });
     return currentFromApi;
-  }, [
-    liveRisk,
-    manualRisk,
-    currentRiskQuery.data,
-    historyQuery.data,
-    vehicleId,
-  ]);
+  }, [liveRisk, manualRisk, currentRiskQuery.data, historyQuery.data, vehicleId]);
 
   const historyChartData = useMemo(() => {
     const rows = historyQuery.data?.history ?? [];
-    return [...rows]
-      .reverse()
-      .map((item) => ({
-        time: formatTime(item.timestamp),
-        score: item.score,
-      }));
+    return [...rows].reverse().map((item) => ({ time: formatTime(item.timestamp), score: item.score }));
   }, [historyQuery.data]);
 
   const computeMutation = useMutation({
     mutationFn: async () => {
       setActionError(null);
-      return computeRisk(vehicleId.trim(), {
-        driver_state: parseJsonInput(driverStateJson, "driver_state"),
-        road_state: parseJsonInput(roadStateJson, "road_state"),
-        telemetry: parseJsonInput(telemetryJson, "telemetry"),
+      return computeRisk(vehicleId, {
+        driver_state: selectedScenario.driverState,
+        road_state: selectedScenario.roadState,
+        telemetry: selectedScenario.telemetry,
         publish: true,
         cache: true,
         persist: true,
@@ -455,12 +293,12 @@ export function SafetyDashboard() {
     mutationFn: async () => {
       setActionError(null);
       const riskScore = displayedRisk?.score;
-      return detectSafetyEvents(vehicleId.trim(), {
-        driver_id: driverId.trim(),
-        session_id: sessionId.trim() || undefined,
-        driver_state: parseJsonInput(driverStateJson, "driver_state"),
-        road_state: parseJsonInput(roadStateJson, "road_state"),
-        telemetry: parseJsonInput(telemetryJson, "telemetry"),
+      return detectSafetyEvents(vehicleId, {
+        driver_id: driverId,
+        session_id: sessionId,
+        driver_state: selectedScenario.driverState,
+        road_state: selectedScenario.roadState,
+        telemetry: selectedScenario.telemetry,
         risk_score: riskScore,
         attach_clips: true,
         enqueue_clip_retry: false,
@@ -477,111 +315,43 @@ export function SafetyDashboard() {
 
   return (
     <div className="space-y-8">
-      <section className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-5 lg:grid-cols-3">
-        <label className="block text-sm">
-          <span className="mb-1 block text-slate-400">Vehicle ID</span>
-          <input
-            value={vehicleId}
-            onChange={(e) => setVehicleId(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
-          />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1 block text-slate-400">Driver ID</span>
-          <input
-            value={driverId}
-            onChange={(e) => setDriverId(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
-          />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1 block text-slate-400">Fleet org (WebSocket)</span>
-          <input
-            value={orgId}
-            onChange={(e) => setOrgId(e.target.value)}
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
-          />
-        </label>
-      </section>
-
+      {/* Risk Overview */}
       <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
         <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">Live composite risk</h2>
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                wsStatus === "connected"
-                  ? "bg-emerald-500/15 text-emerald-300"
-                  : wsStatus === "connecting"
-                    ? "bg-amber-500/15 text-amber-300"
-                    : "bg-slate-800 text-slate-400"
-              }`}
-            >
-              WS {wsStatus}
+            <h2 className="text-lg font-semibold">Live Risk Score</h2>
+            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${wsStatus === "connected" ? "bg-emerald-500/15 text-emerald-300" : wsStatus === "connecting" ? "bg-amber-500/15 text-amber-300" : "bg-slate-800 text-slate-400"}`}>
+              {wsStatus === "connected" ? "● Live" : wsStatus === "connecting" ? "● Connecting" : "○ Offline"}
             </span>
           </div>
 
           {displayedRisk ? (
             <div className="flex flex-col items-center gap-4">
-              <RiskGauge
-                score={Math.round(displayedRisk.score)}
-                risk={displayedRisk.level}
-              />
-              <div className="w-full text-center">
-                <p className="text-sm text-slate-400">
-                  Updated {formatTime(displayedRisk.timestamp)}
-                </p>
-                {displayedRisk.message ? (
-                  <p className="mt-1 text-xs text-amber-300">{displayedRisk.message}</p>
-                ) : null}
-              </div>
+              <RiskGauge score={Math.round(displayedRisk.score)} risk={displayedRisk.level} />
+              <p className="text-sm text-slate-400">Updated {formatTime(displayedRisk.timestamp)}</p>
+              {displayedRisk.message && <p className="text-xs text-amber-300">{displayedRisk.message}</p>}
             </div>
           ) : (
-            <p className="text-sm text-slate-400">
-              No risk score yet. Run compute or wait for a WebSocket update.
+            <p className="py-8 text-center text-sm text-slate-400">
+              No risk data yet. Select a scenario and run a simulation below.
             </p>
           )}
 
-          {wsError ? (
-            <p className="mt-3 text-xs text-amber-300">{wsError}</p>
-          ) : null}
-
           {displayedRisk?.reasons?.length ? (
             <div className="mt-6">
-              <h3 className="mb-2 text-sm font-semibold text-slate-300">Reasons</h3>
+              <h3 className="mb-2 text-sm font-semibold text-slate-300">Risk factors</h3>
               <ul className="space-y-1 text-sm text-slate-400">
-                {displayedRisk.reasons.map((reason) => (
-                  <li key={reason}>• {reason}</li>
-                ))}
+                {displayedRisk.reasons.map((reason) => <li key={reason}>• {reason}</li>)}
               </ul>
             </div>
           ) : null}
 
-          {displayedRisk?.overrides?.length ? (
-            <div className="mt-4">
-              <h3 className="mb-2 text-sm font-semibold text-slate-300">Overrides</h3>
-              <ul className="space-y-1 text-sm text-rose-300">
-                {displayedRisk.overrides.map((item) => (
-                  <li key={item.rule_id}>{item.reason}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          {wsError && <p className="mt-3 text-xs text-amber-300">{wsError}</p>}
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">Risk history</h2>
-              <p className="text-sm text-slate-400">
-                Persisted scores from Module 4F
-              </p>
-            </div>
-            {historyQuery.data?.warning ? (
-              <p className="text-xs text-amber-300">{historyQuery.data.warning}</p>
-            ) : null}
-          </div>
-
+          <h2 className="mb-2 text-lg font-semibold">Risk History</h2>
+          <p className="mb-4 text-sm text-slate-400">Score over time (higher = more dangerous)</p>
           {historyChartData.length > 0 ? (
             <div className="h-56 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -589,187 +359,218 @@ export function SafetyDashboard() {
                   <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
                   <XAxis dataKey="time" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                   <YAxis domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{
-                      background: "#0f172a",
-                      border: "1px solid #334155",
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="score"
-                    stroke="#f97316"
-                    strokeWidth={2}
-                    dot={false}
-                  />
+                  <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid #334155" }} />
+                  <Line type="monotone" dataKey="score" stroke="#f97316" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <p className="text-sm text-slate-500">
-              No persisted history yet. Compute risk with persistence enabled.
+            <p className="py-12 text-center text-sm text-slate-500">
+              No history yet. Run a simulation to see risk scores plotted here.
             </p>
           )}
         </section>
       </div>
 
+      {/* Simulation Panel — user-friendly */}
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">Demo inputs</h2>
-            <p className="text-sm text-slate-400">
-              JSON payloads sent to 4F compute and detect endpoints
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => computeMutation.mutate()}
-              disabled={!vehicleValid || computeMutation.isPending}
-              className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-500 disabled:opacity-50"
-            >
-              {computeMutation.isPending ? "Computing…" : "Compute risk"}
-            </button>
-            <button
-              type="button"
-              onClick={() => detectMutation.mutate()}
-              disabled={!vehicleValid || !driverValid || detectMutation.isPending}
-              className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50"
-            >
-              {detectMutation.isPending ? "Detecting…" : "Run event detection"}
-            </button>
-          </div>
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold">Simulate a Driving Scenario</h2>
+          <p className="text-sm text-slate-400">
+            Pick a situation to test how the safety system responds
+          </p>
         </div>
 
-        <div className="mb-4 flex flex-wrap gap-2">
-          {DEMO_SCENARIOS.map((scenario) => (
+        <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {SCENARIOS.map((scenario) => (
             <button
               key={scenario.id}
               type="button"
-              onClick={() => applyScenario(scenario.id)}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-                activeScenario === scenario.id
-                  ? "border-orange-500/50 bg-orange-500/15 text-orange-200"
-                  : "border-slate-700 text-slate-300 hover:bg-slate-800"
+              onClick={() => { setSelectedScenario(scenario); setActionError(null); }}
+              className={`rounded-xl border p-4 text-left transition-all ${
+                selectedScenario.id === scenario.id
+                  ? `${SEVERITY_COLORS[scenario.severity]} ring-2 ${SEVERITY_RING[scenario.severity]}`
+                  : "border-slate-700 hover:border-slate-600 hover:bg-slate-800/50"
               }`}
-              title={scenario.hint}
             >
-              {scenario.label}
+              <span className="text-2xl">{scenario.icon}</span>
+              <h3 className="mt-2 text-sm font-semibold text-white">{scenario.label}</h3>
+              <p className="mt-1 text-xs text-slate-400">{scenario.description}</p>
             </button>
           ))}
         </div>
-        <p className="mb-4 text-xs text-slate-500">
-          {
-            DEMO_SCENARIOS.find((item) => item.id === activeScenario)
-              ?.expectedEvents
-          }
-          {" · "}
-          {
-            DEMO_SCENARIOS.find((item) => item.id === activeScenario)?.hint
-          }
-        </p>
 
-        <div className="grid gap-4 lg:grid-cols-3">
-          <label className="block text-sm">
-            <span className="mb-1 block text-slate-400">driver_state</span>
-            <textarea
-              value={driverStateJson}
-              onChange={(e) => setDriverStateJson(e.target.value)}
-              rows={10}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs"
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="mb-1 block text-slate-400">road_state</span>
-            <textarea
-              value={roadStateJson}
-              onChange={(e) => setRoadStateJson(e.target.value)}
-              rows={10}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs"
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="mb-1 block text-slate-400">telemetry</span>
-            <textarea
-              value={telemetryJson}
-              onChange={(e) => setTelemetryJson(e.target.value)}
-              rows={10}
-              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs"
-            />
-          </label>
+        {/* Selected scenario summary */}
+        <div className="mb-6 rounded-xl border border-slate-700 bg-slate-800/50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">
+                <span className="mr-2">{selectedScenario.icon}</span>
+                {selectedScenario.label}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">{selectedScenario.expectedOutcome}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => computeMutation.mutate()}
+                disabled={computeMutation.isPending}
+                className="rounded-lg bg-orange-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-orange-900/20 hover:bg-orange-500 disabled:opacity-50"
+              >
+                {computeMutation.isPending ? "Computing…" : "⚡ Compute Risk"}
+              </button>
+              <button
+                type="button"
+                onClick={() => detectMutation.mutate()}
+                disabled={detectMutation.isPending}
+                className="rounded-lg bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500 disabled:opacity-50"
+              >
+                {detectMutation.isPending ? "Detecting…" : "🔍 Detect Events"}
+              </button>
+            </div>
+          </div>
+
+          {/* Visual summary of scenario parameters */}
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg bg-slate-900/60 p-3">
+              <p className="mb-1 text-xs font-medium text-slate-500">Driver Status</p>
+              <div className="flex flex-wrap gap-1.5">
+                {selectedScenario.driverState.is_drowsy || (selectedScenario.driverState.consecutive_drowsy_frames as number) > 30 ? (
+                  <span className="rounded bg-red-500/20 px-2 py-0.5 text-xs text-red-300">😴 Drowsy</span>
+                ) : (
+                  <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-300">👁️ Alert</span>
+                )}
+                {selectedScenario.driverState.phone_detected ? (
+                  <span className="rounded bg-red-500/20 px-2 py-0.5 text-xs text-red-300">📱 Phone</span>
+                ) : null}
+                {selectedScenario.driverState.seatbelt_worn ? (
+                  <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-300">🔒 Belted</span>
+                ) : (
+                  <span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300">⚠️ No belt</span>
+                )}
+              </div>
+            </div>
+            <div className="rounded-lg bg-slate-900/60 p-3">
+              <p className="mb-1 text-xs font-medium text-slate-500">Road Objects</p>
+              {(selectedScenario.roadState.objects as Array<{ class: string; distance_m: number }> | undefined)?.length ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {(selectedScenario.roadState.objects as Array<{ class: string; distance_m: number }>).map((obj, i) => (
+                    <span key={i} className="rounded bg-blue-500/20 px-2 py-0.5 text-xs text-blue-300">
+                      {obj.class === "car" ? "🚗" : obj.class === "pedestrian" ? "🚶" : "🔷"} {obj.class} @ {obj.distance_m}m
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-xs text-slate-500">Clear road</span>
+              )}
+            </div>
+            <div className="rounded-lg bg-slate-900/60 p-3">
+              <p className="mb-1 text-xs font-medium text-slate-500">Vehicle</p>
+              <span className="rounded bg-sky-500/20 px-2 py-0.5 text-xs text-sky-300">
+                🏎️ {String(selectedScenario.telemetry.speed_kmh)} km/h
+              </span>
+            </div>
+          </div>
         </div>
 
-        {actionError ? (
-          <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-            {actionError}
-          </p>
-        ) : null}
+        {/* Results */}
+        {actionError && (
+          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            ❌ {actionError}
+          </div>
+        )}
 
-        {detectMutation.data ? (
-          <div className="mt-4 text-sm text-emerald-300">
-            <p>
-              Detection finished: {detectMutation.data.detected} detected,{" "}
-              {detectMutation.data.persisted} persisted.
+        {detectMutation.data && (
+          <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+            <p className="text-sm font-semibold text-emerald-300">
+              ✓ Detection complete: {detectMutation.data.detected} event{detectMutation.data.detected !== 1 ? "s" : ""} found, {detectMutation.data.persisted} saved
             </p>
             {detectMutation.data.events.length > 0 ? (
-              <ul className="mt-2 list-inside list-disc text-slate-300">
+              <ul className="mt-2 space-y-1">
                 {detectMutation.data.events.map((event) => (
-                  <li key={event.id}>
-                    {event.event_type} ({event.severity})
+                  <li key={event.id} className="flex items-center gap-2 text-sm text-slate-300">
+                    <SeverityBadge severity={event.severity} />
+                    <span>{event.event_type.replace(/_/g, " ")}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-amber-300">
-                No events matched thresholds. Load the &quot;3 events&quot; or
-                &quot;2 events&quot; scenario, or add confirmed road objects with
-                closing speed (TTC) and/or consecutive_drowsy_frames &gt; 60.
+              <p className="mt-1 text-xs text-slate-400">
+                All clear — no safety threats detected in this scenario.
               </p>
             )}
           </div>
-        ) : null}
+        )}
+
+        {/* Advanced toggle for devs */}
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className="text-xs text-slate-500 hover:text-slate-300"
+        >
+          {showAdvanced ? "▾ Hide" : "▸ Show"} raw JSON (for developers)
+        </button>
+        {showAdvanced && (
+          <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            <div>
+              <p className="mb-1 text-xs text-slate-500">driver_state</p>
+              <pre className="max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-300">
+                {JSON.stringify(selectedScenario.driverState, null, 2)}
+              </pre>
+            </div>
+            <div>
+              <p className="mb-1 text-xs text-slate-500">road_state</p>
+              <pre className="max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-300">
+                {JSON.stringify(selectedScenario.roadState, null, 2)}
+              </pre>
+            </div>
+            <div>
+              <p className="mb-1 text-xs text-slate-500">telemetry</p>
+              <pre className="max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-300">
+                {JSON.stringify(selectedScenario.telemetry, null, 2)}
+              </pre>
+            </div>
+          </div>
+        )}
       </section>
 
+      {/* Safety Events Feed */}
       <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">Safety event feed</h2>
+            <h2 className="text-lg font-semibold">Safety Events</h2>
             <p className="text-sm text-slate-400">
-              {events.length} events · {unacknowledged} unacknowledged
+              {events.length} total · {unacknowledged > 0 && (
+                <span className="text-amber-300">{unacknowledged} need attention</span>
+              )}
+              {unacknowledged === 0 && "all clear"}
             </p>
           </div>
           <button
             type="button"
-            onClick={() =>
-              queryClient.invalidateQueries({ queryKey: ["safety-events", vehicleId] })
-            }
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["safety-events", vehicleId] })}
             className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold hover:bg-slate-800"
           >
-            Refresh
+            ↻ Refresh
           </button>
         </div>
 
-        {eventsQuery.data?.warning ? (
-          <p className="mb-4 text-sm text-amber-300">{eventsQuery.data.warning}</p>
-        ) : null}
+        {eventsQuery.data?.warning && <p className="mb-4 text-sm text-amber-300">{eventsQuery.data.warning}</p>}
 
         {events.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            No safety events stored for this vehicle yet. Run event detection with
-            a seeded vehicle/driver in Postgres.
-          </p>
+          <div className="rounded-xl border border-dashed border-slate-700 py-12 text-center">
+            <p className="text-3xl">🛡️</p>
+            <p className="mt-2 text-sm text-slate-400">No safety events yet</p>
+            <p className="mt-1 text-xs text-slate-500">Select a scenario above and click "Detect Events" to simulate</p>
+          </div>
         ) : (
           <div className="space-y-4">
             {events.map((event) => (
               <EventCard
                 key={event.id}
                 event={event}
-                driverId={driverId.trim()}
-                onAcknowledged={() =>
-                  queryClient.invalidateQueries({
-                    queryKey: ["safety-events", vehicleId],
-                  })
-                }
+                driverId={driverId}
+                onAcknowledged={() => queryClient.invalidateQueries({ queryKey: ["safety-events", vehicleId] })}
               />
             ))}
           </div>

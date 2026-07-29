@@ -113,6 +113,19 @@ async def persist_result(
         session.add(row)
     if rows:
         await session.commit()
+        from app.services.event_service import publish_maintenance_alert
+
+        for row in rows:
+            shap = row.shap_explanation or {}
+            severity = str(shap.get("severity") or "normal")
+            if severity.lower() in {"critical", "high"} or float(row.health_score) <= 0.35:
+                await publish_maintenance_alert(
+                    vehicle_id=vehicle_id,
+                    component=row.component,
+                    health_score=float(row.health_score),
+                    severity=severity,
+                    confidence=row.confidence,
+                )
     return rows
 
 

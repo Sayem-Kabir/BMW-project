@@ -1,64 +1,46 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { homePathForRole, readRoleCookie } from "@/lib/roles";
 
 export default function Home() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    const role = readRoleCookie();
+    if (token && role) {
+      router.replace(homePathForRole(role));
+    }
+  }, [router]);
+
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-bmw-blue to-blue-900">
-      <div className="text-center px-6">
-        <p className="text-sm uppercase tracking-widest text-blue-200 mb-3">
-          Live driver + road intelligence
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-bmw-blue to-blue-900 px-6">
+      <div className="max-w-xl text-center">
+        <p className="mb-3 text-sm uppercase tracking-widest text-blue-200">
+          BMW AI Platform
         </p>
-        <h1 className="text-5xl font-bold mb-4">
-          BMW AI Automotive Intelligence Platform
+        <h1 className="mb-4 text-4xl font-bold text-white sm:text-5xl">
+          Sign in to continue
         </h1>
-        <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
-          Real-time Driver Monitoring • Road Understanding • Predictive Maintenance • Risk & Events • AI Assistant
+        <p className="mb-10 text-lg text-blue-100/90">
+          Role-based access for drivers, fleet managers, and admins. Features
+          unlock after login.
         </p>
-        <div className="space-x-4">
-          <Link
-            href="/monitor"
-            className="inline-block px-8 py-3 bg-white text-bmw-blue font-bold rounded-lg hover:bg-gray-200"
-          >
-            Live Monitor
+        <Link
+          href="/login"
+          className="inline-block rounded-lg bg-white px-10 py-3.5 text-lg font-bold text-bmw-blue hover:bg-blue-50"
+        >
+          Login
+        </Link>
+        <p className="mt-6 text-sm text-blue-200/80">
+          New org?{" "}
+          <Link href="/register" className="underline hover:text-white">
+            Create an account
           </Link>
-          <Link
-            href="/dashboard"
-            className="inline-block px-8 py-3 bg-bmw-blue border-2 border-white text-white font-bold rounded-lg hover:bg-blue-800"
-          >
-            Dashboard
-          </Link>
-          <Link
-            href="/road"
-            className="inline-block px-8 py-3 bg-emerald-600 border-2 border-emerald-300 text-white font-bold rounded-lg hover:bg-emerald-500"
-          >
-            Road View
-          </Link>
-          <Link
-            href="/maintenance"
-            className="inline-block px-8 py-3 bg-violet-700 border-2 border-violet-300 text-white font-bold rounded-lg hover:bg-violet-600"
-          >
-            Maintenance
-          </Link>
-          <Link
-            href="/safety"
-            className="inline-block px-8 py-3 bg-orange-700 border-2 border-orange-300 text-white font-bold rounded-lg hover:bg-orange-600"
-          >
-            Risk & Events
-          </Link>
-          <Link
-            href="/assistant"
-            className="inline-block px-8 py-3 bg-sky-700 border-2 border-sky-300 text-white font-bold rounded-lg hover:bg-sky-600"
-          >
-            AI Assistant
-          </Link>
-          <a
-            href="http://localhost:8000/docs"
-            className="inline-block px-8 py-3 bg-bmw-blue border-2 border-white text-white font-bold rounded-lg hover:bg-blue-800"
-            target="_blank"
-            rel="noreferrer"
-          >
-            API Docs
-          </a>
-        </div>
+        </p>
       </div>
     </main>
   );

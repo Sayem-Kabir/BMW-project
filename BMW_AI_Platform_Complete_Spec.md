@@ -5,6 +5,8 @@
 > **Training Environment:** Kaggle Free Tier + Google Colab Free Tier (zero cost).
 > **Goal:** A working, demo-ready full-stack platform covering SDV, ADAS, Predictive Maintenance, RAG, and XAI.
 
+> 🆕 **Update note:** This revision adds Sections 14–19 covering authentication/RBAC, personalized role-based dashboards, production hardening, ML/AI governance, advanced industry-level features, and a dedicated performance/optimization pass (Phase 13). All new or changed content is tagged **🆕 NEW** or **✏️ UPDATED** so you can find it quickly. Original Phases 0–7 and Modules 01–10 are unchanged.
+
 ---
 
 ## Table of Contents
@@ -22,6 +24,13 @@
 11. [API Endpoints Reference](#11-api-endpoints-reference)
 12. [Deployment Architecture](#12-deployment-architecture)
 13. [Reference Repositories](#13-reference-repositories)
+14. 🆕 [Phase 8 — Authentication, RBAC & Multi-Tenancy](#14-phase-8--authentication-rbac--multi-tenancy-new)
+15. 🆕 [Phase 9 — Personalized Role-Based Dashboards](#15-phase-9--personalized-role-based-dashboards-new)
+16. 🆕 [Phase 10 — Production Hardening & Observability](#16-phase-10--production-hardening--observability-new)
+17. 🆕 [Phase 11 — ML/AI Maturity & Governance](#17-phase-11--mlai-maturity--governance-new)
+18. 🆕 [Phase 12 — Notifications & Product Polish](#18-phase-12--notifications--product-polish-new)
+19. 🆕 [Advanced Industry-Level Features](#19-advanced-industry-level-features-new)
+20. 🆕 [Phase 13 — Performance & Optimization Pass](#20-phase-13--performance--optimization-pass-new)
 
 ---
 
@@ -3013,7 +3022,51 @@ Add `ml/models/*.pt` to `.gitignore` (too large for Git). Instead, document how 
 
 ## 10. Database Schema
 
+> 🆕 **NEW:** The `users` table below was added because the original schema had `organizations`, `vehicles`, and `drivers`, but no actual login/authentication entity or role model. This table is what backs Phase 8 (Authentication, RBAC & Multi-Tenancy) and Phase 9 (Personalized Dashboards). `drivers` is kept as-is for domain data (license number etc.); a driver who also logs in is linked via `drivers.user_id`.
+
 ```sql
+-- 🆕 NEW ── Users (authentication + RBAC) ────────────────
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,       -- argon2/bcrypt
+    role VARCHAR(20) NOT NULL DEFAULT 'driver', -- super_admin, org_admin, fleet_manager, driver, maintenance_tech
+    org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+    driver_id UUID REFERENCES drivers(id),      -- nullable, set when role='driver'
+    mfa_secret VARCHAR(64),                     -- TOTP secret, nullable
+    mfa_enabled BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_email_verified BOOLEAN DEFAULT FALSE,
+    last_login TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_org ON users(org_id, role);
+
+-- 🆕 NEW ── Refresh tokens (rotating, revocable sessions) ─
+CREATE TABLE refresh_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash VARCHAR(255) NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 🆕 NEW ── Audit log (who did what, for compliance/EU AI Act traceability)
+CREATE TABLE audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id),
+    org_id UUID REFERENCES organizations(id),
+    action VARCHAR(100) NOT NULL,   -- e.g. EVENT_ACKNOWLEDGED, ROLE_CHANGED, MODEL_PROMOTED
+    target_type VARCHAR(50),        -- e.g. safety_events, users, maintenance_predictions
+    target_id UUID,
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_log_org ON audit_log(org_id, created_at DESC);
+
 -- ── Organizations ──────────────────────────────────────
 CREATE TABLE organizations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -3164,6 +3217,41 @@ CREATE TABLE assistant_conversations (
 | POST | `/api/v1/auth/login` | JWT login with email + password |
 | POST | `/api/v1/auth/register` | Create new user account |
 | POST | `/api/v1/auth/refresh` | Refresh JWT access token |
+| POST | `/api/v1/auth/logout` | 🆕 NEW — revoke refresh token |
+| POST | `/api/v1/auth/verify-email` | 🆕 NEW — confirm email via token |
+| POST | `/api/v1/auth/forgot-password` | 🆕 NEW — send password reset email |
+| POST | `/api/v1/auth/reset-password` | 🆕 NEW — set new password from reset token |
+| POST | `/api/v1/auth/mfa/enable` | 🆕 NEW — enable TOTP MFA |
+| POST | `/api/v1/auth/mfa/verify` | 🆕 NEW — verify TOTP code at login |
+| GET | `/api/v1/auth/me` | 🆕 NEW — current user profile + role |
+
+### 🆕 NEW — User & Organization Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/orgs/{org_id}/users` | List users in an org (admin only) |
+| POST | `/api/v1/orgs/{org_id}/users/invite` | Invite a new user by email |
+| PATCH | `/api/v1/users/{user_id}/role` | Change a user's role (admin only) |
+| DELETE | `/api/v1/users/{user_id}` | Deactivate a user account |
+| GET | `/api/v1/orgs/{org_id}/audit-log` | Paginated audit trail for the org |
+
+### 🆕 NEW — Notifications
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/notifications/webhooks` | Register a webhook URL for safety events |
+| GET | `/api/v1/notifications/preferences` | Get current user's alert preferences |
+| PATCH | `/api/v1/notifications/preferences` | Update email/SMS/push preferences |
+
+### 🆕 NEW — Model & Data Governance
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/models/{name}/versions` | List MLflow model versions and stage |
+| POST | `/api/v1/models/{name}/promote` | Promote a model version to production |
+| POST | `/api/v1/events/{event_id}/feedback` | Mark a safety event as false positive (feeds retraining) |
+| GET | `/api/v1/users/{user_id}/export` | GDPR-style personal data export |
+| DELETE | `/api/v1/users/{user_id}/data` | GDPR-style right-to-erasure request |
 
 ### Driver Monitoring
 
@@ -3331,6 +3419,210 @@ GitHub Actions Deploy:
 
 ---
 
+## 14. Phase 8 — Authentication, RBAC & Multi-Tenancy 🆕 NEW
+
+**Timeline: Days 63–70 | Foundation for all personalization work below**
+
+This phase closes the biggest gap in the original build: there was no real `users` table, password handling, or role model — only `drivers` and `organizations`. Nothing in Section 15 (personalized dashboards) is possible without this phase.
+
+**Scope (8A–8F):**
+
+- **8A — Users table & password handling.** Implement the `users`, `refresh_tokens`, and `audit_log` tables from Section 10. Hash passwords with `argon2` (preferred) or `bcrypt`. Never store plaintext or reversible passwords.
+- **8B — JWT issuance & rotation.** Short-lived access token (15 min), long-lived refresh token (7–30 days) stored **hashed** in `refresh_tokens`. Rotate the refresh token on every use; revoke on logout or password change.
+- **8C — Role model.** Five roles: `super_admin`, `org_admin`, `fleet_manager`, `driver`, `maintenance_tech`. Enforce with a FastAPI dependency, e.g. `Depends(require_role("fleet_manager", "org_admin"))`, applied per-route — never trust a role claim without re-validating server-side on every request.
+- **8D — Row-level scoping.** Every query that touches `vehicles`, `safety_events`, `driver_scores`, etc. must filter by `org_id` (and by `driver_id` when the caller's role is `driver`). This is what makes the same API endpoints return different, personalized data per user.
+- **8E — Registration & onboarding flow.** Register → email verification → create/join an organization → (if fleet manager) register vehicles → (if driver) get linked to a vehicle. Land the new user on an empty-state dashboard, not a blank page.
+- **8F — Optional MFA & OAuth.** TOTP-based MFA (`pyotp` + QR code) and/or Google OAuth login. Both are cheap to add once 8A–8D exist and meaningfully raise the perceived security maturity of the project.
+
+**Key backend snippet — role-gated route:**
+
+```python
+# app/core/deps.py
+from fastapi import Depends, HTTPException, status
+from app.core.security import get_current_user
+
+def require_role(*allowed_roles: str):
+    def checker(user = Depends(get_current_user)):
+        if user.role not in allowed_roles:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Insufficient role")
+        return user
+    return checker
+
+# app/api/v1/fleet.py
+@router.get("/fleet/vehicles")
+async def list_fleet_vehicles(
+    user = Depends(require_role("fleet_manager", "org_admin", "super_admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Vehicle).where(Vehicle.org_id == user.org_id)
+    )
+    return result.scalars().all()
+```
+
+**Exit criteria:** a user can register, verify their email, log in, receive a role-scoped JWT, and every existing API endpoint from Section 11 returns only their org's (or their own) data.
+
+---
+
+## 15. Phase 9 — Personalized Role-Based Dashboards 🆕 NEW
+
+**Timeline: Days 71–82 | Frontend-heavy, depends on Phase 8**
+
+One Next.js app, role-aware routing — not three separate frontends.
+
+**Scope (9A–9D):**
+
+- **9A — Driver dashboard** (`app/(driver)/dashboard`): own safety score trend, own vehicle's live telemetry (WebSocket, scoped by `driver_id`), own safety event history, AI assistant chat scoped to their vehicle's manual.
+- **9B — Fleet manager dashboard** (`app/(fleet)/dashboard`): existing Module 09 fleet view, now gated to `org_id`, plus a driver leaderboard and incident heatmap.
+- **9C — Admin dashboard** (`app/(admin)/dashboard`): user invites and role management, audit log viewer, system health (Celery queue depth, model versions from MLflow via the new `/models` endpoints).
+- **9D — Shared design system.** One component library, one theme, role-specific layouts composed from shared primitives (`<StatCard>`, `<TelemetryChart>`, `<EventList>`) so the three dashboards don't diverge into three codebases.
+
+**Route-to-role mapping:**
+
+```
+middleware.ts
+  → decode JWT role claim
+  → role === 'driver'         → /driver/dashboard
+  → role === 'fleet_manager'  → /fleet/dashboard
+  → role in ('org_admin','super_admin') → /admin/dashboard
+```
+
+**Exit criteria:** three visually distinct, data-scoped dashboards live behind one login, sharing one component library and one set of backend routes.
+
+---
+
+## 16. Phase 10 — Production Hardening & Observability 🆕 NEW
+
+**Timeline: Days 83–92**
+
+**Scope (10A–10E):**
+
+- **10A — Testing.** pytest coverage on auth and risk-scoring logic; Playwright/Cypress e2e covering register → login → role-scoped dashboard; k6/Locust load test on the WebSocket fan-out.
+- **10B — Observability.** Wire up the `SENTRY_DSN` env var that already exists in Section 12 but was never connected. Structured JSON logging. Prometheus + Grafana panels for API latency, Celery queue depth, model inference time.
+- **10C — Security.** Rate limit `/api/v1/auth/login` (e.g. `slowapi`, 5 attempts/minute/IP). Validate all uploaded frames/files for size and MIME type. Move secrets out of `.env` into a vault (Doppler, AWS Secrets Manager, or Render's secret files) for production.
+- **10D — API hardening.** Pagination on every list endpoint, idempotency keys on POST routes that create resources, a consistent error envelope (`{"error": {"code", "message"}}`), API version discipline (`/api/v1/...` stays stable; breaking changes go to `/api/v2/...`).
+- **10E — Audit logging.** Every role change, event acknowledgment, and model promotion writes a row to `audit_log` (Section 10) — this both satisfies the EU AI Act traceability requirement already referenced in Section 1 and is genuinely useful for debugging.
+
+**Exit criteria:** Sentry captures a deliberately-triggered error end-to-end; `/auth/login` returns 429 after 5 failed attempts; `EXPLAIN ANALYZE` on the top 10 dashboard queries shows no sequential scans on tables >10k rows.
+
+---
+
+## 17. Phase 11 — ML/AI Maturity & Governance 🆕 NEW
+
+**Timeline: Days 93–100**
+
+**Scope (11A–11D):**
+
+- **11A — Model registry discipline.** Actually use MLflow's `staging` → `production` stage transitions (already available in your stack, previously only used for experiment tracking) — gate promotion behind an eval-metric check via `POST /api/v1/models/{name}/promote`.
+- **11B — Drift detection.** Compare live telemetry feature distributions against the training distribution (e.g. population stability index on speed, EAR, braking frequency); alert when drift crosses a threshold.
+- **11C — Feedback loop.** Use the new `POST /api/v1/events/{event_id}/feedback` endpoint so drivers/managers can flag false positives; periodically export flagged events into a retraining dataset.
+- **11D — LLM guardrails & RAG evaluation.** Input/output filtering on the AI Vehicle Assistant (refuse out-of-scope or unsafe advice); build a small RAGAS-based eval set to measure retrieval faithfulness instead of trusting the RAG pipeline blindly.
+
+**Exit criteria:** a model version cannot reach `production` stage without passing an automated eval check; the assistant has a documented eval score, not just a vibe check.
+
+---
+
+## 18. Phase 12 — Notifications & Product Polish 🆕 NEW
+
+**Timeline: Days 101–108**
+
+**Scope (12A–12D):**
+
+- **12A — Alerting.** Email (Resend) and optionally SMS (Twilio) for `CRITICAL` severity safety events, using the new `notifications/preferences` and `notifications/webhooks` endpoints.
+- **12B — PWA support.** Installable driver dashboard for mobile, using Next.js PWA tooling.
+- **12C — Accessibility & theming.** Keyboard navigation, ARIA labels, dark mode, WCAG-AA color contrast — ties directly into the EU AI Act framing already in Section 1.
+- **12D — Reporting.** PDF weekly driver report (extends the existing CSV export endpoint) using the same data as `/analytics/driver/{id}/weekly`.
+
+**Exit criteria:** a CRITICAL safety event triggers an email within seconds; the driver dashboard installs as a PWA on a phone; a Lighthouse accessibility audit scores 90+.
+
+---
+
+## 19. Advanced Industry-Level Features 🆕 NEW
+
+These go beyond "complete product" into "distinctive, automotive-grade platform." Pick based on time budget — not all are required, but each is a strong differentiator for a BMW-facing portfolio.
+
+### 19.1 Automotive compliance & cybersecurity
+- **ISO 21434 TARA document** — a written threat & risk assessment for your own system (e.g. spoofed Kuksa signals, malicious CV pipeline input) stored in the repo.
+- **UNECE R155/R156-style signed OTA model updates** — new model weights are cryptographically signed; the loader verifies the signature before use.
+- **ISO 26262-inspired severity classification** for safety events, with documented fail-safe behavior when a sensor feed drops.
+
+### 19.2 Edge AI & OTA deployment
+- ONNX/TensorRT export + INT8 quantization for on-device inference (simulate a Jetson-class edge target).
+- Edge/cloud split: lightweight on-device model, escalate to cloud LLM/XAI only above a risk threshold.
+- OTA rollout dashboard: push a model version to a fleet %, monitor error rate, roll back on regression (canary-style).
+
+### 19.3 Event-driven data backbone
+- Kafka or Redpanda replacing direct Redis pub-sub for telemetry ingestion.
+- Feature store (Feast) so training and real-time inference read the same computed features — eliminates training/serving skew.
+- Event replay: re-run any historical drive through the risk engine for debugging or regression testing.
+
+### 19.4 Advanced ML/AI
+- Sensor fusion: camera + simulated radar/LiDAR (nuScenes/KITTI) combined via a Kalman filter.
+- Multi-agent LangGraph: supervisor graph coordinating specialized maintenance/safety/route agents instead of one flat RAG chain.
+- Federated learning simulation (FedAvg across a few simulated vehicle clients) for privacy-preserving driver-behavior training.
+- Digital twin: live 2D/3D vehicle state view driven by telemetry, pairing with Eclipse Kuksa Canvas.
+
+### 19.5 Infrastructure & DevOps
+- Kubernetes (k3d/kind for local, Helm charts) instead of pure docker-compose.
+- Terraform for cloud deployment instead of manual setup.
+- Canary/blue-green deploys for backend and model releases.
+- Chaos testing: deliberately kill Redis/Postgres mid-demo and confirm graceful degradation.
+
+### 19.6 Business-layer / SaaS features
+- Stripe test-mode billing with per-vehicle or per-seat tiers.
+- Insurance telematics scoring: turn `driver_scores` into a usage-based-insurance premium calculator.
+- Carbon/efficiency tracking for EVs: battery health + driving style → efficiency score.
+- Webhook system so external systems can subscribe to safety events.
+- API gateway with per-tenant rate limiting.
+- GDPR-style data export/erasure (already added as endpoints in Section 11).
+
+---
+
+## 20. Phase 13 — Performance & Optimization Pass 🆕 NEW
+
+**Timeline: Days 109–116 | Run this last, against real bottlenecks, not guesses**
+
+**Scope by module:**
+
+| Module | Optimization | Why |
+|---|---|---|
+| 01 — Driver Monitoring | Adaptive frame sampling (full inference every 3–5 frames, optical-flow interpolation between) | Cuts CV compute 60–70% |
+| 01 — Driver Monitoring | ONNX/INT8 quantization of YOLOv8n and landmark models | 2–4x CPU inference speedup |
+| 01 — Driver Monitoring | Gate MediaPipe/Dlib behind a cheap face-presence check | Avoids running the full 468-point mesh on empty frames |
+| 02 — Road Understanding | ROI cropping + periodic full-frame re-segmentation | Avoids segmenting the full frame every call |
+| 02 — Road Understanding | Run Module 01 and 02 as independent async workers | Removes unnecessary sequential blocking |
+| 03 — Predictive Maintenance | Batch telemetry writes (1–5s buffer) instead of row-by-row inserts | Single biggest DB win available |
+| 03 — Predictive Maintenance | TimescaleDB continuous aggregates for hourly/daily rollups | Avoids scanning raw rows on every dashboard load |
+| 03 — Predictive Maintenance | LTTB downsampling before sending chart data to the frontend | Charts don't need millisecond resolution |
+| 04 — Risk Engine | Redis cache (short TTL) for latest risk score per vehicle | Cuts repeated Postgres reads |
+| 04 — Risk Engine | Throttle WebSocket fan-out to ~2–4 updates/sec | Matches human perception, cuts bandwidth at fleet scale |
+| 04 — Risk Engine | Run hard-override rules (4B) before weighted scoring | Cheap checks gate expensive computation |
+| 04 — Risk Engine | Partial index `WHERE acknowledged = FALSE` on `safety_events` | Matches the dashboard's actual query pattern |
+| 05 — AI Assistant | Persist embeddings instead of re-embedding the knowledge base on every deploy | Removes redundant compute |
+| 05 — AI Assistant | Semantic cache (embedding-similarity, not exact match) for common questions | Cuts Ollama load |
+| 05 — AI Assistant | Small classifier model routes queries before invoking the full LLM | Avoids using the biggest model for routing |
+| 06 — Fleet Dashboard | Virtualized lists (`react-window`) for 100+ vehicle views | Avoids rendering every row |
+| 06 — Fleet Dashboard | `React.memo`/`useMemo` on chart components | One WebSocket tick shouldn't re-render every chart |
+| 06 — Fleet Dashboard | WebSocket channel filtering by `org_id`/role (closes the gap the original spec flagged as "deferred until fleet auth lands" — now that Phase 8 exists, implement it) | Avoids broadcasting every event to every socket |
+| 07 — Testing/Demo | Load test the WebSocket fan-out with k6/Locust | Finds the real bottleneck before optimizing blindly |
+| 07 — Testing/Demo | Profile the CV pipeline with `py-spy`/`cProfile` | Confirms which stage is actually slow |
+
+**Cross-cutting (apply once, benefits everything):**
+
+- Gzip/brotli response compression on the API.
+- HTTP caching headers on read-mostly endpoints (`/analytics/fleet/leaderboard`).
+- Tuned async SQLAlchemy connection pool (`pool_size`, `max_overflow`).
+- Read replica for analytics queries, separate from the primary write path.
+- Celery queues split by task weight (`ml_tasks` vs `notifications`) so slow jobs don't block fast ones.
+- `next/dynamic` route-based code splitting so the driver dashboard doesn't ship fleet-manager bundle code.
+- `next/image` for video-clip thumbnails instead of full-resolution frames.
+- CDN in front of MinIO/R2 for safety-event video clips.
+- Horizontal autoscaling on inference workers specifically (the actual bottleneck), not the API server.
+
+**Exit criteria:** p95 dashboard load under 300ms with 500 simulated concurrent connections; `EXPLAIN ANALYZE` on all dashboard queries shows index usage; CV pipeline throughput measured and documented, not assumed.
+
+---
+
 ## Quick Start Checklist
 
 ```
@@ -3381,3 +3673,7 @@ Demo Preparation
 *Built to demonstrate production-grade automotive AI engineering aligned with BMW Group Software's strategic direction: Software-Defined Vehicle (SDV), ADAS, Predictive Analytics, and Responsible AI under EU AI Act compliance.*
 
 *All datasets used are freely available for academic and portfolio use. All training designed for zero-cost execution on Kaggle Free + Google Colab Free tiers.*
+
+---
+
+> 🆕 **Phases 0–7 above are the original build. Phases 8–13 (Sections 14–20) are the industry-level upgrade layer added in this revision — authentication/RBAC, personalized dashboards, production hardening, ML governance, notifications, advanced platform features, and a dedicated performance pass. Suggested build order: Phase 8 → 9 → 10 → 11 → 12 → 13, picking Section 19 items opportunistically based on time budget.**

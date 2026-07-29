@@ -17,7 +17,7 @@ async def test_health():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
-    assert data["phase"] == "1"
+    assert data["phase"] == "7"
 
 
 @pytest.mark.asyncio
@@ -76,4 +76,4 @@ async def test_xai_explain_scaffold():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/api/v1/xai/explain", json={})
     assert response.status_code == 200
-    assert response.json()["phase"] == "scaffold"
+    assert response.json()["phase"] == "6G"

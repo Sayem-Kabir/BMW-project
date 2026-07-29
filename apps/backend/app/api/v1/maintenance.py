@@ -10,8 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.access import FEATURE_MAINTENANCE, require_feature
 from app.core.database import get_async_session
 from app.models.maintenance import MaintenancePrediction
+from app.models.user import User
 from app.schemas.common import (
     MaintenancePredictRequest,
     MaintenancePredictionResponse,
@@ -27,7 +29,9 @@ VALID_COMPONENTS = ("engine", "brake", "battery", "tire")
 
 
 @router.get("/status")
-async def maintenance_status():
+async def maintenance_status(
+    _user: User = Depends(require_feature(FEATURE_MAINTENANCE)),
+):
     """Model-artifact readiness and feature contracts without inference."""
     try:
         status = await asyncio.to_thread(maintenance_service.component_status)
@@ -45,6 +49,7 @@ async def predict_maintenance(
     vehicle_id: UUID,
     request: MaintenancePredictRequest,
     session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(require_feature(FEATURE_MAINTENANCE)),
 ):
     """Run the 3G pipeline for one telemetry payload and persist components."""
     if not request.telemetry:
@@ -79,7 +84,11 @@ async def predict_maintenance(
 
 
 @router.post("/{vehicle_id}/trigger")
-async def trigger_prediction(vehicle_id: UUID, request: MaintenancePredictRequest):
+async def trigger_prediction(
+    vehicle_id: UUID,
+    request: MaintenancePredictRequest,
+    _user: User = Depends(require_feature(FEATURE_MAINTENANCE)),
+):
     """Queue one background 3G run through Celery."""
     from app.tasks.maintenance import run_batch_predictions
 
@@ -107,6 +116,7 @@ async def maintenance_history(
     vehicle_id: UUID,
     session: AsyncSession = Depends(get_async_session),
     limit: int = 100,
+    _user: User = Depends(require_feature(FEATURE_MAINTENANCE)),
 ):
     """Recent persisted predictions for one vehicle, newest first."""
     limit = max(1, min(int(limit), 500))
@@ -138,6 +148,7 @@ async def maintenance_history(
 async def list_predictions(
     vehicle_id: UUID,
     session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(require_feature(FEATURE_MAINTENANCE)),
 ):
     """Latest persisted prediction per component."""
     warning: str | None = None
@@ -170,6 +181,7 @@ async def component_prediction(
     vehicle_id: UUID,
     component: str,
     session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(require_feature(FEATURE_MAINTENANCE)),
 ):
     """Latest persisted prediction (with SHAP payload) for one component."""
     key = component.strip().lower()

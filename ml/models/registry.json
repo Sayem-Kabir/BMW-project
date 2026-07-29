@@ -1,0 +1,52 @@
+{
+  "phase": "8C",
+  "models_dir": "ml/models",
+  "entries": [
+    {
+      "id": "yolov8n_base",
+      "filename": "yolov8n.pt",
+      "source": "ultralytics",
+      "ultralytics_name": "yolov8n.pt",
+      "required": false,
+      "used_by": ["cabin_intelligence", "driver_fallback"]
+    },
+    {
+      "id": "yolov8m_base",
+      "filename": "yolov8m.pt",
+      "source": "ultralytics",
+      "ultralytics_name": "yolov8m.pt",
+      "required": false,
+      "used_by": ["road_understanding_fallback"]
+    },
+    {
+      "id": "driver_monitor",
+      "filename": "driver_monitor_best.pt",
+      "source": "manual_or_8d",
+      "required": false,
+      "used_by": ["driver_monitoring"],
+      "train": "python -m ml.training.train_driver_yolo"
+    },
+    {
+      "id": "road_yolo",
+      "filename": "road_yolov8m_best.pt",
+      "source": "manual_or_8d",
+      "required": false,
+      "used_by": ["road_understanding"],
+      "train": "python -m ml.training.train_road_yolo"
+    },
+    {
+      "id": "seg_road",
+      "filename": "seg_road.pt",
+      "source": "manual",
+      "required": false,
+      "used_by": ["road_segmentation"]
+    },
+    {
+      "id": "pedestrian_temporal",
+      "filename": "best_pedestrian_yololstm.pt",
+      "source": "manual",
+      "required": false,
+      "used_by": ["pedestrian_temporal"]
+    }
+  ]
+}

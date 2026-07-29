@@ -19,11 +19,70 @@ logger = logging.getLogger(__name__)
 PHASE = "4E"
 CLIP_DURATION_SECONDS = 30.0
 DEFAULT_FPS = 30.0
+EVENT_CHANNEL_PREFIX = "events:"
+EVENT_PATTERN = "events:*"
+MAINTENANCE_CHANNEL_PREFIX = "maintenance:"
+MAINTENANCE_PATTERN = "maintenance:*"
 
 _detector: Any | None = None
 _detector_lock = RLock()
 _buffers: dict[str, VideoClipBuffer] = {}
 _buffers_lock = RLock()
+
+
+def event_channel(vehicle_id: UUID | str) -> str:
+    return f"{EVENT_CHANNEL_PREFIX}{vehicle_id}"
+
+
+def maintenance_channel(vehicle_id: UUID | str) -> str:
+    return f"{MAINTENANCE_CHANNEL_PREFIX}{vehicle_id}"
+
+
+async def publish_safety_event(row: SafetyEvent) -> None:
+    """Fan-out a persisted safety event to Redis for fleet WebSocket clients."""
+    from app.core import redis as redis_ops
+
+    payload = {
+        "id": str(row.id),
+        "vehicle_id": str(row.vehicle_id),
+        "driver_id": str(row.driver_id),
+        "event_type": row.event_type,
+        "severity": row.severity,
+        "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+        "video_clip_url": row.video_clip_url,
+        "xai_explanation": row.xai_explanation,
+        "acknowledged": bool(row.acknowledged),
+        "phase": "6A",
+    }
+    try:
+        await redis_ops.publish_json(event_channel(row.vehicle_id), payload)
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to publish safety event %s", row.id)
+
+
+async def publish_maintenance_alert(
+    *,
+    vehicle_id: UUID | str,
+    component: str,
+    health_score: float,
+    severity: str,
+    confidence: float | None = None,
+) -> None:
+    from app.core import redis as redis_ops
+
+    payload = {
+        "vehicle_id": str(vehicle_id),
+        "component": component,
+        "health_score": float(health_score),
+        "severity": severity,
+        "confidence": confidence,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "phase": "6A",
+    }
+    try:
+        await redis_ops.publish_json(maintenance_channel(vehicle_id), payload)
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to publish maintenance alert for %s", vehicle_id)
 
 
 def get_detector() -> Any:
@@ -218,6 +277,9 @@ async def persist_detected_events(
                 len(rows),
             )
 
+    for row in rows:
+        await publish_safety_event(row)
+
     return rows
 
 
@@ -253,6 +315,37 @@ async def detect_and_persist(
             session_id=session_id,
             attach_clips=attach_clips,
         )
+        # Phase 12A — CRITICAL fan-out (email/SMS/webhooks)
+        notify_results = []
+        try:
+            from app.models.vehicle import Vehicle
+            from app.services import notification_service
+            from sqlalchemy import select
+
+            org_id = None
+            vrow = (
+                await session.execute(select(Vehicle).where(Vehicle.id == UUID(str(vehicle_id))))
+            ).scalar_one_or_none()
+            if vrow is not None:
+                org_id = vrow.org_id
+            for row in rows:
+                if str(row.severity).upper() == "CRITICAL":
+                    notify_results.append(
+                        await notification_service.notify_critical_safety_event(
+                            session,
+                            event={
+                                "id": str(row.id),
+                                "event_type": row.event_type,
+                                "severity": row.severity,
+                                "vehicle_id": str(row.vehicle_id),
+                                "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+                                "xai_explanation": row.xai_explanation,
+                            },
+                            org_id=org_id,
+                        )
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("CRITICAL notification fan-out failed: %s", exc)
 
     return {
         "vehicle_id": str(vehicle_id),
@@ -261,6 +354,7 @@ async def detect_and_persist(
         "phase": PHASE,
         "detected": len(detection.events),
         "persisted": len(rows),
+        "notifications": notify_results,
         "events": [
             {
                 "id": str(row.id),

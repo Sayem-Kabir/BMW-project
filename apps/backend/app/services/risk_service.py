@@ -46,6 +46,24 @@ def evaluate_risk(
         telemetry,
     )
     payload = decision.to_dict()
+    # Spec Section 19.1 — ISO 26262-inspired fail-safe when feeds drop
+    try:
+        from ml.risk_engine.fail_safe import apply_fail_safe
+
+        fs = apply_fail_safe(
+            payload.get("level") or "LOW",
+            float(payload.get("score") or 0),
+            driver_state=driver_state,
+            road_state=road_state,
+            telemetry=telemetry,
+        )
+        payload["level"] = fs["level"]
+        payload["score"] = fs["score"]
+        payload["asil"] = fs["asil"]
+        payload["safe_state"] = fs["safe_state"]
+        payload["fail_safe"] = fs
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("fail_safe skipped: %s", exc)
     # Spec aliases used by fleet WebSocket consumers.
     payload["risk_score"] = payload["score"]
     payload["risk_level"] = payload["level"]
@@ -120,7 +138,12 @@ async def evaluate_and_publish(
                 "persisted": persisted,
                 "warning": "Redis publish unavailable",
             }
+            # Still fan-out to Kafka buffer when Redis is down
+            _publish_kafka(vehicle_id, payload)
+            _write_feast(vehicle_id, payload, telemetry)
             return payload
+        _publish_kafka(vehicle_id, payload)
+        _write_feast(vehicle_id, payload, telemetry)
 
     payload = {
         **payload,
@@ -130,6 +153,41 @@ async def evaluate_and_publish(
         "persisted": persisted,
     }
     return payload
+
+
+def _publish_kafka(vehicle_id: UUID | str, payload: Mapping[str, Any]) -> None:
+    try:
+        from app.core.config import settings
+        from app.services import kafka_bus
+
+        if not settings.kafka_enabled:
+            return
+        kafka_bus.publish(
+            "bmw.risk.scores",
+            {"vehicle_id": str(vehicle_id), **dict(payload)},
+            bootstrap=settings.kafka_bootstrap,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Kafka risk publish skipped: %s", exc)
+
+
+def _write_feast(
+    vehicle_id: UUID | str,
+    payload: Mapping[str, Any],
+    telemetry: Mapping[str, Any] | None,
+) -> None:
+    try:
+        from ml.feature_store import write_features
+
+        feats = {
+            "risk_score": float(payload.get("score") or 0),
+            "risk_level": str(payload.get("level") or "LOW"),
+            "speed_kmh": (telemetry or {}).get("speed_kmh"),
+            "battery_soc_pct": (telemetry or {}).get("battery_soc_pct"),
+        }
+        write_features(str(vehicle_id), feats)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Feast write skipped: %s", exc)
 
 
 async def persist_risk_score(

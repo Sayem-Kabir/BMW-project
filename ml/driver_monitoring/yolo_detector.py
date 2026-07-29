@@ -96,11 +96,28 @@ class YOLODriverDetector:
 
         if self.model_path.is_file() and self.model_path.stat().st_size > 0:
             self._load_model()
+        else:
+            # Prefer ONNX sibling when .pt missing (Phase 13 / §19.2)
+            onnx = self.model_path.with_suffix(".onnx")
+            if onnx.is_file():
+                self.model_path = onnx
+                self._load_model()
 
     def _load_model(self) -> None:
         from ultralytics import YOLO
 
-        self._model = YOLO(str(self.model_path))
+        path = self.model_path
+        # Prefer adjacent ONNX when present (faster CPU path)
+        onnx = path.with_suffix(".onnx") if path.suffix.lower() != ".onnx" else path
+        load_path = onnx if onnx.is_file() else path
+        try:
+            from ml.models.signed_ota import verify_signed_weights
+
+            verify_signed_weights(load_path, require_signature=False)
+        except Exception:  # noqa: BLE001
+            pass
+        self._model = YOLO(str(load_path))
+        self.model_path = Path(load_path)
         names = getattr(self._model, "names", None)
         if isinstance(names, dict) and names:
             self._names = {int(k): str(v) for k, v in names.items()}

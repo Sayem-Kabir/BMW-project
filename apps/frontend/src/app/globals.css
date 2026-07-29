@@ -2,24 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
+:root,
+[data-theme="dark"] {
+  --bg: #020617;
+  --fg: #f8fafc;
+  --muted: #94a3b8;
+  --surface: rgba(15, 23, 42, 0.7);
+  --surface-2: #1e293b;
+  --border: #1e293b;
+  --accent: #60a5fa;
+  --focus-ring: #93c5fd;
+}
+
+[data-theme="light"] {
+  --bg: #f8fafc;
+  --fg: #0f172a;
+  --muted: #475569;
+  --surface: rgba(255, 255, 255, 0.92);
+  --surface-2: #e2e8f0;
+  --border: #cbd5e1;
+  --accent: #1d4ed8;
+  --focus-ring: #2563eb;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  [data-theme="light"] {
+    color-scheme: light;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  .skip-link {
+    position: absolute;
+    left: 1rem;
+    top: -100%;
+    z-index: 100;
+    border-radius: 0.5rem;
+    background: var(--accent);
+    color: #fff;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .skip-link:focus {
+    top: 1rem;
+  }
+}
+
 @layer components {
   .primary-button {
-    @apply rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-300;
   }
 
   .secondary-button {
-    @apply rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply rounded-lg border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-300;
   }
 
   .success-button {
-    @apply rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500;
+    @apply rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300;
   }
 
   .danger-button {
-    @apply rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600;
+    @apply rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-300;
   }
 
   .ghost-button {
-    @apply rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition hover:bg-slate-800 hover:text-white;
+    @apply rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition hover:bg-slate-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-300;
   }
 }

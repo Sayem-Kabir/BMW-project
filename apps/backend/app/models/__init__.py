@@ -9,6 +9,9 @@ from app.models.maintenance import MaintenancePrediction
 from app.models.risk_score import RiskScoreRecord
 from app.models.score import DriverScore
 from app.models.assistant import AssistantConversation
+from app.models.refresh_token import RefreshToken
+from app.models.audit_log import AuditLog
+from app.models.notification import NotificationPreference, NotificationWebhook
 
 __all__ = [
     "Organization",
@@ -22,4 +25,8 @@ __all__ = [
     "RiskScoreRecord",
     "DriverScore",
     "AssistantConversation",
+    "RefreshToken",
+    "AuditLog",
+    "NotificationPreference",
+    "NotificationWebhook",
 ]

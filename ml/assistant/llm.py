@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -17,7 +18,7 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 PHASE = "5C"
-DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+DEFAULT_OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
 
 GenerateFn = Callable[[str], str]
@@ -79,7 +80,7 @@ class OllamaClient:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.2},
+            "options": {"temperature": 0.2, "num_predict": 150},
         }
         request = urllib.request.Request(
             f"{self.base_url}/api/generate",

@@ -20,6 +20,8 @@ SEG_ROAD_CLASS_COLORS_BGR = (
 )
 SEG_ROAD_BACKGROUND_CLASS_ID = 2
 SEG_ROAD_OVERLAY_ALPHA = 0.45
+# Spec Phase 13 — full-frame re-segmentation every N calls (ROI reuse between)
+SEG_FULL_EVERY_N = 5
 
 # YOLO road-object detection remains available for later box-based modules.
 YOLO_ROAD_MODEL_FILENAME = "road_yolov8m_best.pt"

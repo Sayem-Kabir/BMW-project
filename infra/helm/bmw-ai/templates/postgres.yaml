@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: bmw-postgres
+spec:
+  selector:
+    app: bmw-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bmw-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bmw-postgres
+  template:
+    metadata:
+      labels:
+        app: bmw-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.image.postgres | default "timescale/timescaledb:latest-pg16" }}
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: bmwai
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.env.postgresPassword | default "bmwai_secret" | quote }}
+            - name: POSTGRES_DB
+              value: bmwai_db

@@ -93,8 +93,8 @@ bmw-ai-platform/
 | **06** | Predictive Maintenance | Modules 3A–3I: datasets, engine/brake/battery/tire models, Kuksa I/O, pipeline, API, UI |
 | **07** | AI Assistant | LangGraph agent with RAG + live Kuksa telemetry context |
 | **08** | Safety Events | Module 4G: live risk & events UI (complete) |
-| **09** | Fleet Dashboard | Multi-vehicle real-time monitoring with WebSocket updates |
-| **10** | Explainable AI | Grad-CAM heatmaps + SHAP values + natural language explanations |
+| **09** | Fleet Dashboard | Multi-vehicle real-time monitoring with WebSocket updates (Phase 6A–6E) |
+| **10** | Explainable AI | Grad-CAM heatmaps, SHAP panels, NL explanations (Phase 6F–6G) |
 
 ## 🎯 Development Roadmap
 
@@ -106,7 +106,7 @@ bmw-ai-platform/
 - Next.js landing + dashboard scaffold, CI workflow
 - Docs under `docs/`
 
-### Phase 1 — Driver Monitoring (Days 6–22) — NEXT
+### Phase 1 — Driver Monitoring (Days 6–22)
 - EAR/MAR detection with Dlib
 - Head pose estimation with MediaPipe
 - YOLO training on DMD dataset (Kaggle)
@@ -153,15 +153,100 @@ bmw-ai-platform/
 - **Multi-turn conversation memory** — prior turns loaded into the agent prompt + history reload in UI (Module 5G — complete)
 
 ### Phase 6 — Dashboard & XAI (Days 45–62)
-- Fleet real-time WebSocket updates
-- Driver leaderboard
-- Grad-CAM heatmaps
-- SHAP explanations
+- **Fleet APIs + enriched WebSocket** — overview metrics, multi-vehicle seed, `risk:*` / `events:*` / `maintenance:*` fan-out (Module 6A — complete)
+- **Fleet overview UI** — `/dashboard` vehicle grid, risk bars, demo Leaflet map (Module 6B — complete)
+- **Vehicle detail** — `/dashboard/vehicles/[id]` telemetry charts, events, maintenance, assistant link (Module 6C — complete)
+- **Leaderboard + analytics** — real `/analytics/fleet/leaderboard` and incident trends (Module 6D — complete)
+- **Alerts center** — `/dashboard/alerts` with ack, clip, and XAI preview (Module 6E — complete)
+- **Grad-CAM heatmaps** — EigenCAM/synthetic overlays + heatmap file API (Module 6F — complete)
+- **Unified XAI panel** — NL explanations, SHAP plot/ASCII, rule trace (Module 6G — complete)
 
-### Phase 7 — Integration & Demo (Days 60–75)
-- End-to-end testing
-- Live demo mode with replayed video
-- Deployment to Render + Vercel
+### Phase 7 — Integration & Demo (Days 60–75) ✅ COMPLETE
+- **E2E integration tests** — driver → fleet → XAI → assistant smoke suite (Module 7A — complete)
+- **Offline demo runner** — video/synthetic frame replay + risk/events injection (Module 7B — complete)
+- **Demo mode UI** — `/demo` start/stop/status + walkthrough (Module 7C — complete)
+- **Light JWT auth** — login page, demo user seed, org-scoped fleet reads, write protection in prod (Module 7D — complete)
+- **Prod config** — CORS origins, `/ready` probe, env matrix (Module 7E — complete)
+- **Cloud deploy** — `Dockerfile.backend`, `render.yaml`, `vercel.json` + [docs/CLOUD_DEPLOY.md](docs/CLOUD_DEPLOY.md) (Module 7F — complete)
+- **Docs + CI** — [docs/DEMO.md](docs/DEMO.md), architecture diagram, GitHub Actions lint/typecheck/pytest (Module 7G — complete)
+
+### Phase 8 — Advanced Integration extras (local) ✅
+- Captum IG, Kuksa bridge, weight registry, YOLO export, metrics (kept as platform extras)
+
+### Spec Phase 9 — Personalized Role Dashboards ✅ COMPLETE
+- **9D** Shared `StatCard` / `TelemetryChart` / `EventList` / `RoleShell`
+- **9B** `/fleet/dashboard` (+ analytics/alerts/xai); `/dashboard` redirects
+- **9A** `/driver/dashboard` — score, telemetry, events
+- **9C** `/admin/dashboard` — invites, roles, audit, health APIs
+
+### Spec Phase 10 — Production Hardening & Observability ✅ COMPLETE
+- **10A** Playwright e2e + k6/Locust load scripts ([docs/PHASE10.md](docs/PHASE10.md))
+- **10B** Sentry (`SENTRY_DSN`), JSON logging, Prometheus custom metrics, Grafana Phase 10 dashboard
+- **10C** Login rate limit (5/min → 429), upload MIME/size checks, secrets vault notes
+- **10D** Error envelope, pagination, Idempotency-Key, `/api/v1` stability
+- **10E** Audit on event ack + model promote stub
+
+### Spec Phase 11 — ML/AI Maturity & Governance ✅ COMPLETE
+- **11A** MLflow/local promote with eval gate ([docs/PHASE11.md](docs/PHASE11.md))
+- **11B** PSI drift detection (`/api/v1/ml/drift/check`)
+- **11C** Event feedback + retrain CSV export
+- **11D** Assistant guardrails + RAGAS-style eval score
+
+### Spec Phase 12 — Notifications & Product Polish ✅ COMPLETE
+- **12A** CRITICAL email/SMS (Resend/Twilio) + prefs/webhooks ([docs/PHASE12.md](docs/PHASE12.md))
+- **12B** Driver PWA (manifest + service worker)
+- **12C** Skip link, ARIA, focus rings, light/dark theme toggle
+- **12D** Weekly driver PDF (`/api/v1/analytics/driver/{id}/weekly.pdf`)
+
+### Spec Phase 13 — Performance & Optimization Pass ✅ COMPLETE
+- **API/WS** Gzip, analytics Cache-Control, org-filtered + throttled fleet WS ([docs/PHASE13.md](docs/PHASE13.md))
+- **Data** Telemetry batch buffer, LTTB downsample, partial unacked indexes, Timescale CAGG SQL
+- **Risk/Assistant** Override-first short-circuit; semantic answer cache; Celery `ml_tasks` / `notifications`
+- **CV/UI** Adaptive frame sampling + face gate; virtualized fleet grid; memo + dynamic charts
+
+### Spec Section 19 — Advanced Industry Features ✅ COMPLETE
+- Compliance TARA + signed OTA + fail-safe ([docs/SECTION19.md](docs/SECTION19.md))
+- Edge/cloud routing, OTA canary UI (ONNX export optional — user-provided weights)
+- Redpanda profile + Kafka bus wired from risk publish; Feast features on evaluate
+- Kalman fusion, multi-agent assistant, FedAvg, digital twin UI
+- Helm (backend/frontend/postgres/ingress) + Terraform plan scaffold; chaos probes
+- Stripe SDK when `STRIPE_SECRET_KEY` set; insurance + carbon; tenant rate limit; GDPR; password reset
+- CDN/presign media URLs, `next/image` MediaThumb, read-replica analytics sessions
+- **Module 02** cabin API `POST /api/v1/cabin/analysis` + monitor UI panel
+- Email verify / forgot-password / reset-password / Google OAuth / MFA settings UI
+- Brotli compression, Timescale CAGG migration `008`, Helm HPA template
+- Load/a11y measurement docs: [docs/load/k6_500vu_results.md](docs/load/k6_500vu_results.md), [docs/a11y/lighthouse.md](docs/a11y/lighthouse.md)
+
+## 🎬 Demo walkthrough (Phase 7G)
+
+Full checklist: **[docs/DEMO.md](docs/DEMO.md)**
+
+1. Seed → open `/demo` → Start demo  
+2. Fleet `/dashboard` → Safety → vehicle SHAP → Alerts → Grad-CAM → Assistant  
+3. Login: `demo@bmwai.dev` / `demo1234` (manager) · viewer `viewer@bmwai.dev` / `viewer1234`
+
+```mermaid
+flowchart TB
+  DemoUI["/demo UI"] --> API[FastAPI]
+  Runner[demo_runner] --> API
+  API --> Risk[Risk + events]
+  API --> Fleet[Fleet WS]
+  API --> XAI[XAI / SHAP]
+  Fleet --> Dash[Dashboard]
+```
+
+### Cloud URLs (fill after deploy)
+
+| Service | URL |
+|---------|-----|
+| Frontend (Vercel) | `https://YOUR_APP.vercel.app` |
+| API (Render) | `https://YOUR_API.onrender.com` |
+
+Setup: [CLOUD_DEPLOY.md](docs/CLOUD_DEPLOY.md) · [DEPLOYMENT.md](docs/DEPLOYMENT.md)
+
+### Model weights
+
+`yolov8*.pt` and `ml/models/*.pt` are **gitignored**. Cold demo uses synthetic/CPU fallbacks. Optional: `python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"` or place Kaggle exports under `ml/models/` ([TRAINING.md](docs/TRAINING.md)).
 
 ## 🔧 Environment Setup
 
@@ -240,13 +325,21 @@ pnpm install
 ## 🧪 Running Tests
 
 ```bash
-# Backend tests
+# Backend — full suite (CI uses Postgres + Redis services)
 cd apps/backend
 pytest tests/ -v
 
-# Frontend linting
+# Faster local smoke (skips Module 7A integration marker)
+pytest tests/ -m "not integration" -v
+
+# Demo runner unit tests
+cd ../..
+pytest ml/demo/tests/ -v
+
+# Frontend
 cd apps/frontend
-pnpm lint
+npm run lint
+npm run type-check
 ```
 
 ## 🚀 Running the Project Locally (Without Docker)
@@ -309,11 +402,14 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for full cloud setup.
 
 ## 📖 Documentation
 
+- [Demo checklist](docs/DEMO.md)
+- [Cloud acceptance (8G)](docs/CLOUD_ACCEPTANCE.md)
 - [Architecture](docs/architecture.md)
 - [API Reference](docs/api.md)
 - [Database Schema](docs/database.md)
 - [Training Guide](docs/TRAINING.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
+- [Cloud deploy (Render + Vercel)](docs/CLOUD_DEPLOY.md)
 
 ## 🎓 Learning Resources
 

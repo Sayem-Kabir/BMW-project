@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bmw-backend
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: bmw-backend
+  template:
+    metadata:
+      labels:
+        app: bmw-backend
+    spec:
+      containers:
+        - name: backend
+          image: {{ .Values.image.backend }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ENVIRONMENT
+              value: {{ .Values.env.ENVIRONMENT | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bmw-backend
+spec:
+  selector:
+    app: bmw-backend
+  ports:
+    - port: {{ .Values.service.backendPort }}
+      targetPort: 8000

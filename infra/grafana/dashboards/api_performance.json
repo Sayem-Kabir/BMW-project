@@ -1,8 +1,42 @@
 {
-  "title": "BMW API Performance (scaffold)",
+  "title": "BMW API Performance",
   "timezone": "browser",
-  "panels": [],
   "schemaVersion": 39,
-  "version": 1,
-  "description": "Placeholder dashboard — wire Prometheus metrics in Phase 7"
+  "version": 2,
+  "description": "Module 8F — HTTP metrics from prometheus-fastapi-instrumentator (/metrics)",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Request rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[1m]))",
+          "legendFormat": "req/s"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency (p95)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "5xx rate",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))",
+          "legendFormat": "5xx/s"
+        }
+      ]
+    }
+  ]
 }

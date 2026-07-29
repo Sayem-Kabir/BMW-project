@@ -180,7 +180,9 @@ async def analyze_road_frame(
     stream_id: str = road_service.DEFAULT_REST_STREAM_ID,
 ):
     """Analyze one JPEG/PNG while retaining state for the supplied stream ID."""
-    image_bytes = await file.read()
+    from app.core.uploads import read_upload_bytes
+
+    image_bytes = await read_upload_bytes(file)
     try:
         result = await asyncio.to_thread(
             road_service.analyze_frame_bytes,

@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bmw-ai
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+spec:
+  rules:
+    - host: {{ .Values.ingress.host | default "bmw-ai.local" }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: bmw-backend
+                port:
+                  number: {{ .Values.service.backendPort }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bmw-frontend
+                port:
+                  number: {{ .Values.service.frontendPort }}

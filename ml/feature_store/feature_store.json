@@ -1,0 +1,15 @@
+{
+  "entities": {
+    "veh-1": {
+      "speed_mean": 42.0,
+      "risk": 11.0
+    },
+    "00000000-0000-4000-8000-000000000003": {
+      "risk_score": 60.0,
+      "risk_level": "MEDIUM",
+      "speed_kmh": 58,
+      "battery_soc_pct": null
+    }
+  },
+  "phase": "19.3"
+}

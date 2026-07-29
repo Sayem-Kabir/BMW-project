@@ -3,6 +3,24 @@ name: CI Pipeline
 on: [push, pull_request]
 
 jobs:
+  backend-smoke:
+    # Fast offline subset — no Postgres/Redis (integration marked optional)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: apps/backend/requirements.txt
+      - name: Install backend dependencies
+        run: pip install -r apps/backend/requirements.txt
+      - name: Deploy URL normalize + demo runner + Phase 8 unit smoke
+        run: |
+          python -m pytest apps/backend/tests/test_deploy_7f.py apps/backend/tests/test_rbac_8e.py apps/backend/tests/test_auth_8_spec.py apps/backend/tests/test_kuksa_8b.py ml/demo/tests/ ml/xai/tests/ ml/models/tests/ -v --tb=short -q
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/apps/backend
+
   backend-test:
     runs-on: ubuntu-latest
     services:
@@ -37,14 +55,17 @@ jobs:
           cache-dependency-path: apps/backend/requirements.txt
       - name: Install backend dependencies
         run: pip install -r apps/backend/requirements.txt
-      - name: Run tests
+      - name: Full suite including Phase 7A integration
         working-directory: apps/backend
-        run: python -m pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short -q
         env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/apps/backend
           DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test
           DATABASE_URL_SYNC: postgresql://test:test@localhost:5432/test
           REDIS_URL: redis://localhost:6379
           SECRET_KEY: test-secret-key
+          ENVIRONMENT: development
+          REQUIRE_AUTH_WRITES: "false"
 
   frontend-lint:
     runs-on: ubuntu-latest
@@ -53,17 +74,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - name: Install frontend dependencies
         working-directory: apps/frontend
-        run: pnpm install
+        run: npm install
       - name: Lint
         working-directory: apps/frontend
-        run: pnpm lint
+        run: npm run lint
+      - name: Typecheck
+        working-directory: apps/frontend
+        run: npm run type-check
       - name: Build
         working-directory: apps/frontend
-        run: pnpm build
+        run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000

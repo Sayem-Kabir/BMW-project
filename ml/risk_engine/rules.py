@@ -180,8 +180,45 @@ def compute_risk_with_overrides(
     *,
     rules: Sequence[OverrideRule] | None = None,
     timestamp=None,
+    gate_expensive: bool = True,
 ) -> RiskDecision:
-    """Convenience composition of the Module 4A and 4B stages."""
+    """Compose 4B overrides with 4A scoring.
+
+    Spec Phase 13: evaluate hard overrides first. When a CRITICAL override
+    matches, skip the full weighted scorer (cheap rules gate expensive work).
+    """
+    from datetime import datetime, timezone
+
+    from ml.risk_engine.aggregator import RiskResult
+
+    active_rules = tuple(rules) if rules is not None else load_rules()
+    ts = timestamp or datetime.now(timezone.utc)
+
+    if gate_expensive:
+        gate_base = RiskResult(
+            vehicle_id=str(vehicle_id),
+            score=0.0,
+            level="LOW",
+            factors=(),
+            timestamp=ts,
+            method="override_gate_v1",
+        )
+        probe = apply_overrides(
+            gate_base,
+            driver_state,
+            road_state,
+            telemetry,
+            rules=active_rules,
+        )
+        if probe.overrides and probe.level == "CRITICAL":
+            return RiskDecision(
+                base=gate_base,
+                score=probe.score,
+                level=probe.level,
+                overrides=probe.overrides,
+                method="override_first_short_circuit_v1",
+            )
+
     base = compute_risk(
         vehicle_id,
         driver_state,
@@ -189,13 +226,14 @@ def compute_risk_with_overrides(
         telemetry,
         timestamp=timestamp,
     )
-    return apply_overrides(
+    decision = apply_overrides(
         base,
         driver_state,
         road_state,
         telemetry,
-        rules=rules,
+        rules=active_rules,
     )
+    return decision
 
 
 def _parse_rule(raw: Any, index: int) -> OverrideRule:

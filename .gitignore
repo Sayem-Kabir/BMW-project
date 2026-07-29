@@ -28,6 +28,7 @@ MANIFEST
 
 # Node
 node_modules/
+.pnpm-store/
 npm-debug.log
 yarn-error.log
 .pnpm-debug.log
@@ -53,6 +54,8 @@ pgdata/
 # ML Models (too large for Git)
 ml/models/*.pt
 ml/models/*.pth
+yolov8*.pt
+**/yolov8*.pt
 ml/models/*.onnx
 ml/models/*.h5
 ml/models/*.joblib
@@ -79,6 +82,9 @@ chroma_db/
 
 # MinIO
 minio_data/
+
+# XAI heatmaps / uploads
+uploads/
 
 # Logs
 logs/
